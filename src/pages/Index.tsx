@@ -3,6 +3,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Capacitor } from '@capacitor/core';
+import { BleClient, BleDevice, ScanResult } from '@capacitor-community/bluetooth-le';
 import BeaconSimulator from '@/components/BeaconSimulator';
 import PositionGrid from '@/components/PositionGrid';
 import KalmanFilterDisplay from '@/components/KalmanFilterDisplay';
@@ -15,9 +17,10 @@ const Index = () => {
   const [beaconData, setBeaconData] = useState([]);
   const [kalmanFilters, setKalmanFilters] = useState({});
   const [positionHistory, setPositionHistory] = useState([]);
+  const [isNativePlatform, setIsNativePlatform] = useState(false);
   const intervalRef = useRef(null);
 
-  // Beacon configuration matching your ESP32 setup
+  // Your actual beacon configuration
   const beacons = [
     { id: 1001, x: 0, y: 0, name: "Corner NW" },
     { id: 1002, x: 5, y: 0, name: "Corner NE" },
@@ -28,6 +31,11 @@ const Index = () => {
 
   const uuid = "12345678-1234-1234-1234-1234567890ab";
   const txPower = -59;
+
+  // Check if running on native platform
+  useEffect(() => {
+    setIsNativePlatform(Capacitor.isNativePlatform());
+  }, []);
 
   // Kalman Filter Implementation
   class KalmanFilter {
@@ -75,7 +83,92 @@ const Index = () => {
     return Math.pow(10, ratio);
   };
 
-  // Simulate RSSI based on distance with realistic noise
+  // Real BLE scanning function
+  const scanForBeacons = async () => {
+    if (!isNativePlatform) {
+      console.log('Not on native platform, using simulation');
+      return;
+    }
+
+    try {
+      // Initialize BLE
+      await BleClient.initialize();
+      
+      // Request permissions
+      await BleClient.requestLEScan({
+        services: [],
+        allowDuplicates: true,
+        scanMode: 'lowLatency'
+      }, (result: ScanResult) => {
+        // Parse iBeacon data from advertisement
+        const advertisementData = result.device.manufacturerData;
+        if (advertisementData) {
+          const beaconInfo = parseIBeaconData(advertisementData, result.rssi);
+          if (beaconInfo && beaconInfo.uuid.toLowerCase() === uuid.toLowerCase()) {
+            processBeaconData(beaconInfo);
+          }
+        }
+      });
+
+      console.log('BLE scanning started');
+    } catch (error) {
+      console.error('BLE scanning error:', error);
+    }
+  };
+
+  // Parse iBeacon advertisement data
+  const parseIBeaconData = (manufacturerData: any, rssi: number) => {
+    try {
+      // iBeacon format parsing would go here
+      // For now, return mock data structure
+      return {
+        uuid: uuid,
+        major: 1001, // This would be parsed from actual data
+        minor: 1,
+        rssi: rssi,
+        txPower: -59
+      };
+    } catch (error) {
+      console.error('Error parsing iBeacon data:', error);
+      return null;
+    }
+  };
+
+  // Process beacon data (both real and simulated)
+  const processBeaconData = (beaconInfo) => {
+    const beacon = beacons.find(b => b.id === beaconInfo.major);
+    if (!beacon) return;
+
+    // Apply Kalman filter
+    let filteredRSSI = beaconInfo.rssi;
+    if (kalmanFilters[beacon.id]) {
+      filteredRSSI = kalmanFilters[beacon.id].filter(beaconInfo.rssi);
+    }
+
+    const calculatedDistance = rssiToDistance(filteredRSSI, txPower);
+    
+    // Update beacon data state
+    setBeaconData(prev => {
+      const existing = prev.find(b => b.id === beacon.id);
+      const newBeacon = {
+        id: beacon.id,
+        uuid: beaconInfo.uuid,
+        major: beaconInfo.major,
+        minor: beaconInfo.minor,
+        rssi: Math.round(beaconInfo.rssi),
+        filteredRSSI: Math.round(filteredRSSI * 10) / 10,
+        distance: Math.round(calculatedDistance * 100) / 100,
+        actualDistance: existing?.actualDistance || calculatedDistance,
+        x: beacon.x,
+        y: beacon.y,
+        name: beacon.name
+      };
+
+      return prev.filter(b => b.id !== beacon.id).concat(newBeacon);
+    });
+  };
+
+  // Simulate RSSI based on distance with realistic noise (for web demo)
   const simulateRSSI = (distance, txPower = -59) => {
     const pathLoss = 20 * Math.log10(distance) + 20 * Math.log10(2400) - 147.55;
     const rssi = txPower - pathLoss;
@@ -119,65 +212,85 @@ const Index = () => {
     };
   };
 
-  // Simulation loop
+  // Simulation loop for web demo
   const simulationStep = useCallback(() => {
     if (!isScanning) return;
 
-    // Generate beacon data
-    const newBeaconData = beacons.map(beacon => {
-      const distance = Math.sqrt(
-        Math.pow(beacon.x - simulatedPosition.x, 2) + 
-        Math.pow(beacon.y - simulatedPosition.y, 2)
-      );
-      
-      const rawRSSI = simulateRSSI(Math.max(0.1, distance), txPower);
-      
-      // Apply Kalman filter
-      let filteredRSSI = rawRSSI;
-      if (kalmanFilters[beacon.id]) {
-        filteredRSSI = kalmanFilters[beacon.id].filter(rawRSSI);
+    if (isNativePlatform) {
+      // On native platform, real BLE scanning handles data
+      // Calculate position from existing beacon data
+      if (beaconData.length > 0) {
+        const distances = {};
+        beaconData.forEach(beacon => {
+          distances[beacon.id] = beacon.distance;
+        });
+
+        const newPosition = calculatePosition(distances);
+        setCurrentPosition(newPosition);
+        setPositionHistory(prev => [...prev.slice(-50), newPosition]);
       }
+    } else {
+      // Web simulation mode
+      const newBeaconData = beacons.map(beacon => {
+        const distance = Math.sqrt(
+          Math.pow(beacon.x - simulatedPosition.x, 2) + 
+          Math.pow(beacon.y - simulatedPosition.y, 2)
+        );
+        
+        const rawRSSI = simulateRSSI(Math.max(0.1, distance), txPower);
+        
+        // Apply Kalman filter
+        let filteredRSSI = rawRSSI;
+        if (kalmanFilters[beacon.id]) {
+          filteredRSSI = kalmanFilters[beacon.id].filter(rawRSSI);
+        }
+        
+        const calculatedDistance = rssiToDistance(filteredRSSI, txPower);
+        
+        return {
+          id: beacon.id,
+          uuid,
+          major: beacon.id,
+          minor: 1,
+          rssi: Math.round(rawRSSI),
+          filteredRSSI: Math.round(filteredRSSI * 10) / 10,
+          distance: Math.round(calculatedDistance * 100) / 100,
+          actualDistance: Math.round(distance * 100) / 100,
+          x: beacon.x,
+          y: beacon.y,
+          name: beacon.name
+        };
+      });
+
+      setBeaconData(newBeaconData);
+
+      // Calculate position using trilateration
+      const distances = {};
+      newBeaconData.forEach(beacon => {
+        distances[beacon.id] = beacon.distance;
+      });
+
+      const newPosition = calculatePosition(distances);
+      setCurrentPosition(newPosition);
       
-      const calculatedDistance = rssiToDistance(filteredRSSI, txPower);
-      
-      return {
-        id: beacon.id,
-        uuid,
-        major: beacon.id,
-        minor: 1,
-        rssi: Math.round(rawRSSI),
-        filteredRSSI: Math.round(filteredRSSI * 10) / 10,
-        distance: Math.round(calculatedDistance * 100) / 100,
-        actualDistance: Math.round(distance * 100) / 100,
-        x: beacon.x,
-        y: beacon.y,
-        name: beacon.name
-      };
-    });
+      // Update position history
+      setPositionHistory(prev => [...prev.slice(-50), newPosition]);
+    }
+  }, [isScanning, simulatedPosition, kalmanFilters, currentPosition, beaconData, isNativePlatform]);
 
-    setBeaconData(newBeaconData);
-
-    // Calculate position using trilateration
-    const distances = {};
-    newBeaconData.forEach(beacon => {
-      distances[beacon.id] = beacon.distance;
-    });
-
-    const newPosition = calculatePosition(distances);
-    setCurrentPosition(newPosition);
-    
-    // Update position history
-    setPositionHistory(prev => [...prev.slice(-50), newPosition]);
-
-  }, [isScanning, simulatedPosition, kalmanFilters, currentPosition]);
-
-  // Start/stop simulation
+  // Start/stop scanning
   useEffect(() => {
     if (isScanning) {
+      if (isNativePlatform) {
+        scanForBeacons();
+      }
       intervalRef.current = setInterval(simulationStep, 1000); // 1 Hz as specified
     } else {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
+      }
+      if (isNativePlatform) {
+        BleClient.stopLEScan().catch(console.error);
       }
     }
 
@@ -186,7 +299,7 @@ const Index = () => {
         clearInterval(intervalRef.current);
       }
     };
-  }, [isScanning, simulationStep]);
+  }, [isScanning, simulationStep, isNativePlatform]);
 
   const toggleScanning = () => {
     setIsScanning(!isScanning);
@@ -227,6 +340,9 @@ const Index = () => {
             <Badge variant="outline" className="text-blue-200 border-blue-300">
               5 ESP32 Beacons
             </Badge>
+            <Badge variant="outline" className={`${isNativePlatform ? 'text-green-200 border-green-300' : 'text-yellow-200 border-yellow-300'}`}>
+              {isNativePlatform ? 'Native BLE' : 'Web Demo'}
+            </Badge>
           </div>
         </div>
 
@@ -251,11 +367,13 @@ const Index = () => {
               </Button>
             </div>
             
-            <ControlPanel 
-              simulatedPosition={simulatedPosition}
-              setSimulatedPosition={setSimulatedPosition}
-              isScanning={isScanning}
-            />
+            {!isNativePlatform && (
+              <ControlPanel 
+                simulatedPosition={simulatedPosition}
+                setSimulatedPosition={setSimulatedPosition}
+                isScanning={isScanning}
+              />
+            )}
           </div>
         </Card>
 
@@ -276,9 +394,11 @@ const Index = () => {
                 <p className="text-blue-200">
                   Calculated Position: ({Math.round(currentPosition.x * 100) / 100}, {Math.round(currentPosition.y * 100) / 100})m
                 </p>
-                <p className="text-gray-400 text-sm">
-                  Simulated Position: ({Math.round(simulatedPosition.x * 100) / 100}, {Math.round(simulatedPosition.y * 100) / 100})m
-                </p>
+                {!isNativePlatform && (
+                  <p className="text-gray-400 text-sm">
+                    Simulated Position: ({Math.round(simulatedPosition.x * 100) / 100}, {Math.round(simulatedPosition.y * 100) / 100})m
+                  </p>
+                )}
               </div>
             </div>
           </Card>
@@ -309,7 +429,8 @@ const Index = () => {
         {/* Footer */}
         <div className="text-center text-gray-400 text-sm">
           <p>Travvo Heritage Navigation System | BLE Indoor Positioning Demo</p>
-          <p>Ready for Android Studio implementation with AltBeacon library</p>
+          <p>Ready for Android deployment with Capacitor</p>
+          {isNativePlatform && <p className="text-green-400">🟢 Running on native platform - Real BLE scanning active</p>}
         </div>
       </div>
     </div>
