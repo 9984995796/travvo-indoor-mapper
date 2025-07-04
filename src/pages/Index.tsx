@@ -31,15 +31,21 @@ const Index = () => {
 
   // Kalman Filter Implementation
   class KalmanFilter {
+    public Q: number; // Process noise
+    public R: number; // Measurement noise
+    public P: number; // Estimation error covariance
+    public K: number; // Kalman gain
+    public X: number; // Value
+
     constructor(processNoise = 0.0001, measurementNoise = 0.01, estimation = 0) {
-      this.Q = processNoise; // Process noise
-      this.R = measurementNoise; // Measurement noise
-      this.P = 1.0; // Estimation error covariance
-      this.K = 0; // Kalman gain
-      this.X = estimation; // Value
+      this.Q = processNoise;
+      this.R = measurementNoise;
+      this.P = 1.0;
+      this.K = 0;
+      this.X = estimation;
     }
 
-    filter(measurement) {
+    filter(measurement: number) {
       // Prediction update
       this.P = this.P + this.Q;
       
