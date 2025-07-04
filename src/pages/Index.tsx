@@ -98,7 +98,7 @@ const Index = () => {
       await BleClient.requestLEScan({
         services: [],
         allowDuplicates: true,
-        scanMode: ScanMode.LOW_LATENCY
+        scanMode: ScanMode.SCAN_MODE_LOW_LATENCY
       }, (result: ScanResult) => {
         // Parse iBeacon data from advertisement
         const advertisementData = result.manufacturerData;
