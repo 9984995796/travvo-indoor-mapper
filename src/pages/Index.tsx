@@ -4,7 +4,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Capacitor } from '@capacitor/core';
-import { BleClient, BleDevice, ScanResult } from '@capacitor-community/bluetooth-le';
+import { BleClient, BleDevice, ScanResult, ScanMode } from '@capacitor-community/bluetooth-le';
 import BeaconSimulator from '@/components/BeaconSimulator';
 import PositionGrid from '@/components/PositionGrid';
 import KalmanFilterDisplay from '@/components/KalmanFilterDisplay';
@@ -98,10 +98,10 @@ const Index = () => {
       await BleClient.requestLEScan({
         services: [],
         allowDuplicates: true,
-        scanMode: 'lowLatency'
+        scanMode: ScanMode.LOW_LATENCY
       }, (result: ScanResult) => {
         // Parse iBeacon data from advertisement
-        const advertisementData = result.device.manufacturerData;
+        const advertisementData = result.manufacturerData;
         if (advertisementData) {
           const beaconInfo = parseIBeaconData(advertisementData, result.rssi);
           if (beaconInfo && beaconInfo.uuid.toLowerCase() === uuid.toLowerCase()) {
