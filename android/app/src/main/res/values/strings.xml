@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">travvo-indoor-mapper</string>
+    <string name="title_activity_main">travvo-indoor-mapper</string>
+    <string name="package_name">app.lovable.f9a19f44140b412ab9a7a8b782dd63a0</string>
+    <string name="custom_url_scheme">app.lovable.f9a19f44140b412ab9a7a8b782dd63a0</string>
+</resources>
