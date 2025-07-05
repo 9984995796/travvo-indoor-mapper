@@ -139,10 +139,12 @@ export const useBLEScanner = (
         // Parse iBeacon data from advertisement
         const manufacturerData = result.manufacturerData;
         if (manufacturerData && manufacturerData['76']) { // Apple company identifier
-          const arrayBuffer = manufacturerData['76'];
+          const arrayBuffer = manufacturerData['76']; // This is already an ArrayBuffer
           console.log('Found Apple manufacturer data, parsing iBeacon...');
+          console.log('ArrayBuffer type:', arrayBuffer.constructor.name);
+          console.log('ArrayBuffer byteLength:', arrayBuffer.byteLength);
           
-          // Fix: Pass ArrayBuffer directly, let parseIBeaconData create DataView
+          // Pass ArrayBuffer directly to parseIBeaconData
           const beaconInfo = parseIBeaconData(arrayBuffer, result.rssi || -100);
           
           if (beaconInfo && beaconInfo.uuid.toLowerCase() === uuid.toLowerCase()) {
@@ -151,6 +153,8 @@ export const useBLEScanner = (
           } else if (beaconInfo) {
             console.log('Found iBeacon but UUID mismatch:', beaconInfo.uuid, 'vs', uuid);
           }
+        } else {
+          console.log('No Apple manufacturer data found');
         }
       });
 
@@ -187,7 +191,7 @@ export const useBLEScanner = (
       if (isNativePlatform && bleInitialized) {
         console.log('Starting scan and position calculation...');
         scanForBeacons();
-        intervalRef.current = setInterval(calculateFromRealBeacons, 1000); // 1 Hz
+        intervalRef.current = setInterval(calculateFromRealBeacons, 1000);
       } else {
         console.log('Cannot scan - native platform:', isNativePlatform, 'BLE initialized:', bleInitialized);
         setIsScanning(false);
