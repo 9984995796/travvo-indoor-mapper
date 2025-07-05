@@ -139,9 +139,23 @@ export const useBLEScanner = (
         // Parse iBeacon data from advertisement
         const manufacturerData = result.manufacturerData;
         if (manufacturerData && manufacturerData['76']) { // Apple company identifier
-          const arrayBuffer = manufacturerData['76']; // This is already an ArrayBuffer
+          const rawData = manufacturerData['76'];
           console.log('Found Apple manufacturer data, parsing iBeacon...');
-          console.log('ArrayBuffer type:', arrayBuffer.constructor.name);
+          console.log('Raw data type:', rawData.constructor.name);
+          
+          // Convert to ArrayBuffer if needed
+          let arrayBuffer: ArrayBuffer;
+          if (rawData instanceof ArrayBuffer) {
+            arrayBuffer = rawData;
+          } else if (rawData instanceof DataView) {
+            arrayBuffer = rawData.buffer.slice(rawData.byteOffset, rawData.byteOffset + rawData.byteLength);
+          } else if (rawData instanceof Uint8Array) {
+            arrayBuffer = rawData.buffer.slice(rawData.byteOffset, rawData.byteOffset + rawData.byteLength);
+          } else {
+            console.log('Unknown manufacturer data type:', typeof rawData);
+            return;
+          }
+          
           console.log('ArrayBuffer byteLength:', arrayBuffer.byteLength);
           
           // Pass ArrayBuffer directly to parseIBeaconData
