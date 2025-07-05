@@ -139,33 +139,42 @@ export const useBLEScanner = (
         // Parse iBeacon data from advertisement
         const manufacturerData = result.manufacturerData;
         if (manufacturerData && manufacturerData['76']) { // Apple company identifier
-          const rawData = manufacturerData['76'];
+          const rawData = manufacturerData['76'] as any; // Type assertion to handle unknown type
           console.log('Found Apple manufacturer data, parsing iBeacon...');
-          console.log('Raw data type:', rawData.constructor.name);
+          console.log('Raw data type:', rawData?.constructor?.name);
           
-          // Convert to ArrayBuffer if needed
+          // Convert to ArrayBuffer safely
           let arrayBuffer: ArrayBuffer;
-          if (rawData instanceof ArrayBuffer) {
-            arrayBuffer = rawData;
-          } else if (rawData instanceof DataView) {
-            arrayBuffer = rawData.buffer.slice(rawData.byteOffset, rawData.byteOffset + rawData.byteLength);
-          } else if (rawData instanceof Uint8Array) {
-            arrayBuffer = rawData.buffer.slice(rawData.byteOffset, rawData.byteOffset + rawData.byteLength);
-          } else {
-            console.log('Unknown manufacturer data type:', typeof rawData);
-            return;
-          }
           
-          console.log('ArrayBuffer byteLength:', arrayBuffer.byteLength);
-          
-          // Pass ArrayBuffer directly to parseIBeaconData
-          const beaconInfo = parseIBeaconData(arrayBuffer, result.rssi || -100);
-          
-          if (beaconInfo && beaconInfo.uuid.toLowerCase() === uuid.toLowerCase()) {
-            console.log('✅ Found matching beacon:', beaconInfo);
-            processBeaconData(beaconInfo);
-          } else if (beaconInfo) {
-            console.log('Found iBeacon but UUID mismatch:', beaconInfo.uuid, 'vs', uuid);
+          try {
+            if (rawData instanceof ArrayBuffer) {
+              arrayBuffer = rawData;
+            } else if (rawData && typeof rawData === 'object' && rawData.buffer instanceof ArrayBuffer) {
+              // Handle DataView or Uint8Array
+              arrayBuffer = rawData.buffer.slice(
+                rawData.byteOffset || 0, 
+                (rawData.byteOffset || 0) + (rawData.byteLength || rawData.buffer.byteLength)
+              );
+            } else {
+              console.log('Unknown manufacturer data type, attempting direct conversion');
+              // Try to convert unknown type to ArrayBuffer
+              const uint8Array = new Uint8Array(rawData);
+              arrayBuffer = uint8Array.buffer;
+            }
+            
+            console.log('ArrayBuffer byteLength:', arrayBuffer.byteLength);
+            
+            // Pass ArrayBuffer directly to parseIBeaconData
+            const beaconInfo = parseIBeaconData(arrayBuffer, result.rssi || -100);
+            
+            if (beaconInfo && beaconInfo.uuid.toLowerCase() === uuid.toLowerCase()) {
+              console.log('✅ Found matching beacon:', beaconInfo);
+              processBeaconData(beaconInfo);
+            } else if (beaconInfo) {
+              console.log('Found iBeacon but UUID mismatch:', beaconInfo.uuid, 'vs', uuid);
+            }
+          } catch (conversionError) {
+            console.error('Error converting manufacturer data to ArrayBuffer:', conversionError);
           }
         } else {
           console.log('No Apple manufacturer data found');
