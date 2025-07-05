@@ -8,10 +8,16 @@ import PositionGrid from '@/components/PositionGrid';
 import KalmanFilterDisplay from '@/components/KalmanFilterDisplay';
 import { createKalmanFilters } from '@/utils/kalmanFilter';
 import { useBLEScanner } from '@/hooks/useBLEScanner';
+import { Capacitor } from '@capacitor/core';
 
 const Index = () => {
   const [simulatedPosition, setSimulatedPosition] = useState({ x: 2.5, y: 2.5 });
   const [kalmanFilters, setKalmanFilters] = useState({});
+  const [platformInfo, setPlatformInfo] = useState({
+    platform: '',
+    isNative: false,
+    userAgent: ''
+  });
 
   // Your actual beacon configuration
   const beacons = [
@@ -25,6 +31,20 @@ const Index = () => {
   const uuid = "12345678-1234-1234-1234-1234567890ab";
   const txPower = -59;
 
+  // Get platform info for debugging
+  useEffect(() => {
+    setPlatformInfo({
+      platform: Capacitor.getPlatform(),
+      isNative: Capacitor.isNativePlatform(),
+      userAgent: navigator.userAgent
+    });
+    console.log('Platform Info:', {
+      platform: Capacitor.getPlatform(),
+      isNative: Capacitor.isNativePlatform(),
+      userAgent: navigator.userAgent
+    });
+  }, []);
+
   // Initialize Kalman filters for each beacon
   useEffect(() => {
     const filters = createKalmanFilters(beacons);
@@ -37,6 +57,7 @@ const Index = () => {
     beaconData,
     positionHistory,
     isNativePlatform,
+    bleError,
     toggleScanning,
     resetScanning
   } = useBLEScanner(beacons, kalmanFilters, uuid, txPower);
@@ -57,7 +78,7 @@ const Index = () => {
         <div className="text-center space-y-2">
           <h1 className="text-4xl font-bold text-white">Travvo Indoor Positioning System</h1>
           <p className="text-blue-200 text-lg">Real BLE Beacon-Based Navigation</p>
-          <div className="flex justify-center gap-4 items-center">
+          <div className="flex justify-center gap-4 items-center flex-wrap">
             <Badge variant="outline" className="text-blue-200 border-blue-300">
               UUID: {uuid.slice(0, 8)}...
             </Badge>
@@ -68,7 +89,7 @@ const Index = () => {
               5 ESP32 Beacons
             </Badge>
             <Badge variant="outline" className={`${isNativePlatform ? 'text-green-200 border-green-300' : 'text-red-200 border-red-300'}`}>
-              {isNativePlatform ? 'Real BLE Mode' : 'Web Platform - BLE Not Available'}
+              {isNativePlatform ? 'Native Platform Detected' : `Platform: ${platformInfo.platform}`}
             </Badge>
           </div>
         </div>
@@ -95,13 +116,43 @@ const Index = () => {
               </Button>
             </div>
             
+            {/* Debug Information */}
+            <div className="mb-4 p-4 bg-slate-700/30 border border-slate-600 rounded-lg">
+              <h3 className="text-white font-semibold mb-2">Debug Information</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p className="text-gray-400">Platform:</p>
+                  <p className="text-white font-mono">{platformInfo.platform}</p>
+                </div>
+                <div>
+                  <p className="text-gray-400">Native Platform:</p>
+                  <p className={`font-mono ${platformInfo.isNative ? 'text-green-400' : 'text-red-400'}`}>
+                    {platformInfo.isNative ? 'Yes' : 'No'}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-2">
+                <p className="text-gray-400 text-xs">User Agent:</p>
+                <p className="text-gray-300 text-xs font-mono break-all">{platformInfo.userAgent}</p>
+              </div>
+            </div>
+            
             {!isNativePlatform && (
               <div className="text-center p-4 bg-red-900/20 border border-red-500/30 rounded-lg">
-                <p className="text-red-200 font-semibold">⚠️ Real BLE Scanning Not Available</p>
+                <p className="text-red-200 font-semibold">⚠️ BLE Scanning Issue Detected</p>
                 <p className="text-red-300 text-sm mt-2">
-                  This app requires a native mobile platform (Android/iOS) to scan for real BLE beacons.
-                  Deploy to your mobile device to use real beacon functionality.
+                  Platform: {platformInfo.platform} | Native: {platformInfo.isNative ? 'Yes' : 'No'}
                 </p>
+                <p className="text-red-300 text-sm mt-1">
+                  To fix this: Build the app natively using `npm run build && npx cap sync && npx cap run android`
+                </p>
+              </div>
+            )}
+
+            {bleError && (
+              <div className="text-center p-4 bg-red-900/20 border border-red-500/30 rounded-lg mt-4">
+                <p className="text-red-200 font-semibold">BLE Error</p>
+                <p className="text-red-300 text-sm mt-2">{bleError}</p>
               </div>
             )}
           </div>
@@ -159,11 +210,11 @@ const Index = () => {
         {/* Footer */}
         <div className="text-center text-gray-400 text-sm">
           <p>Travvo Heritage Navigation System | Real BLE Indoor Positioning</p>
-          <p>Deploy to Android/iOS device for full functionality</p>
+          <p>Build natively with: npm run build && npx cap sync && npx cap run android</p>
           {isNativePlatform ? (
-            <p className="text-green-400">🟢 Native platform detected - Real BLE scanning available</p>
+            <p className="text-green-400">🟢 Native platform detected - BLE scanning available</p>
           ) : (
-            <p className="text-red-400">🔴 Web platform - Deploy to mobile device for real BLE functionality</p>
+            <p className="text-red-400">🔴 Web platform detected - Build natively for BLE functionality</p>
           )}
         </div>
       </div>

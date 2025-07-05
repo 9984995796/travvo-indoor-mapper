@@ -5,10 +5,8 @@ const config: CapacitorConfig = {
   appId: 'app.lovable.f9a19f44140b412ab9a7a8b782dd63a0',
   appName: 'travvo-indoor-mapper',
   webDir: 'dist',
-  server: {
-    url: 'https://f9a19f44-140b-412a-b9a7-a8b782dd63a0.lovableproject.com?forceHideBadge=true',
-    cleartext: true
-  },
+  // Remove the server config for production builds
+  // The server config should only be used during development
   plugins: {
     BluetoothLe: {
       displayStrings: {

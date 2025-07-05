@@ -29,11 +29,38 @@ export const useBLEScanner = (
   const [beaconData, setBeaconData] = useState<BeaconData[]>([]);
   const [positionHistory, setPositionHistory] = useState<Position[]>([]);
   const [isNativePlatform, setIsNativePlatform] = useState(false);
+  const [bleError, setBleError] = useState<string | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Check if running on native platform
+  // Enhanced platform detection
   useEffect(() => {
-    setIsNativePlatform(Capacitor.isNativePlatform());
+    const checkPlatform = async () => {
+      console.log('Checking platform...', {
+        isNativePlatform: Capacitor.isNativePlatform(),
+        platform: Capacitor.getPlatform(),
+        isAndroid: Capacitor.getPlatform() === 'android',
+        isIOS: Capacitor.getPlatform() === 'ios'
+      });
+      
+      const isNative = Capacitor.isNativePlatform();
+      setIsNativePlatform(isNative);
+      
+      if (isNative) {
+        try {
+          // Test BLE availability
+          await BleClient.initialize();
+          console.log('BLE Client initialized successfully');
+          setBleError(null);
+        } catch (error) {
+          console.error('BLE initialization failed:', error);
+          setBleError(`BLE initialization failed: ${error}`);
+        }
+      } else {
+        setBleError('Not running on native platform');
+      }
+    };
+    
+    checkPlatform();
   }, []);
 
   // Process beacon data (real only)
@@ -77,34 +104,44 @@ export const useBLEScanner = (
   // Real BLE scanning function
   const scanForBeacons = async () => {
     if (!isNativePlatform) {
-      console.log('Not on native platform - real BLE scanning not available');
+      setBleError('BLE scanning requires native platform (Android/iOS)');
       return;
     }
 
     try {
-      // Initialize BLE
+      console.log('Starting BLE scan...');
+      setBleError(null);
+      
+      // Initialize BLE if not already done
       await BleClient.initialize();
       
-      // Request permissions
+      // Request permissions and start scanning
       await BleClient.requestLEScan({
         services: [],
         allowDuplicates: true,
         scanMode: ScanMode.SCAN_MODE_LOW_LATENCY
       }, (result: ScanResult) => {
+        console.log('BLE scan result received:', result);
+        
         // Parse iBeacon data from advertisement
         const manufacturerData = result.manufacturerData;
         if (manufacturerData && manufacturerData['76']) { // Apple company identifier
-          const dataView = new DataView(manufacturerData['76']);
+          const arrayBuffer = manufacturerData['76'];
+          const dataView = new DataView(arrayBuffer);
           const beaconInfo = parseIBeaconData(dataView, result.rssi || -100);
+          
           if (beaconInfo && beaconInfo.uuid.toLowerCase() === uuid.toLowerCase()) {
+            console.log('Found matching beacon:', beaconInfo);
             processBeaconData(beaconInfo);
           }
         }
       });
 
-      console.log('Real BLE scanning started - looking for beacons with UUID:', uuid);
+      console.log('BLE scanning started successfully - looking for beacons with UUID:', uuid);
     } catch (error) {
       console.error('BLE scanning error:', error);
+      setBleError(`BLE scanning failed: ${error}`);
+      setIsScanning(false);
     }
   };
 
@@ -132,7 +169,8 @@ export const useBLEScanner = (
         scanForBeacons();
         intervalRef.current = setInterval(calculateFromRealBeacons, 1000); // 1 Hz
       } else {
-        console.log('Web platform detected - real BLE scanning not available');
+        console.log('Cannot scan - not on native platform');
+        setIsScanning(false);
       }
     } else {
       if (intervalRef.current) {
@@ -151,9 +189,15 @@ export const useBLEScanner = (
   }, [isScanning, calculateFromRealBeacons, isNativePlatform]);
 
   const toggleScanning = () => {
+    if (!isNativePlatform) {
+      setBleError('BLE scanning requires native platform');
+      return;
+    }
+    
     setIsScanning(!isScanning);
     if (!isScanning) {
       setPositionHistory([]);
+      setBleError(null);
     }
   };
 
@@ -162,6 +206,7 @@ export const useBLEScanner = (
     setCurrentPosition({ x: 2.5, y: 2.5 });
     setBeaconData([]);
     setPositionHistory([]);
+    setBleError(null);
   };
 
   return {
@@ -170,6 +215,7 @@ export const useBLEScanner = (
     beaconData,
     positionHistory,
     isNativePlatform,
+    bleError,
     toggleScanning,
     resetScanning
   };
