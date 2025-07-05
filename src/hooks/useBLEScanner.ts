@@ -18,6 +18,52 @@ interface Position {
   y: number;
 }
 
+// Helper function to safely convert data to ArrayBuffer
+const convertToArrayBuffer = (data: unknown): ArrayBuffer | null => {
+  try {
+    // Direct ArrayBuffer
+    if (data instanceof ArrayBuffer) {
+      return data;
+    }
+    
+    // DataView
+    if (data instanceof DataView) {
+      return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+    }
+    
+    // Uint8Array or other TypedArray
+    if (data && typeof data === 'object' && 'buffer' in data && 'byteOffset' in data && 'byteLength' in data) {
+      const typedArray = data as { buffer: ArrayBuffer; byteOffset: number; byteLength: number };
+      return typedArray.buffer.slice(typedArray.byteOffset, typedArray.byteOffset + typedArray.byteLength);
+    }
+    
+    // Array of numbers
+    if (Array.isArray(data) && data.every(item => typeof item === 'number')) {
+      const uint8Array = new Uint8Array(data);
+      return uint8Array.buffer;
+    }
+    
+    // String (hex or base64)
+    if (typeof data === 'string') {
+      // Try hex string
+      if (/^[0-9a-fA-F]+$/.test(data) && data.length % 2 === 0) {
+        const bytes = [];
+        for (let i = 0; i < data.length; i += 2) {
+          bytes.push(parseInt(data.substr(i, 2), 16));
+        }
+        const uint8Array = new Uint8Array(bytes);
+        return uint8Array.buffer;
+      }
+    }
+    
+    console.error('Unable to convert data to ArrayBuffer:', typeof data, data);
+    return null;
+  } catch (error) {
+    console.error('Error in convertToArrayBuffer:', error);
+    return null;
+  }
+};
+
 export const useBLEScanner = (
   beacons: Beacon[],
   kalmanFilters: { [key: number]: KalmanFilter },
@@ -139,29 +185,14 @@ export const useBLEScanner = (
         // Parse iBeacon data from advertisement
         const manufacturerData = result.manufacturerData;
         if (manufacturerData && manufacturerData['76']) { // Apple company identifier
-          const rawData = manufacturerData['76'] as any; // Type assertion to handle unknown type
+          const rawData = manufacturerData['76'];
           console.log('Found Apple manufacturer data, parsing iBeacon...');
           console.log('Raw data type:', rawData?.constructor?.name);
           
           // Convert to ArrayBuffer safely
-          let arrayBuffer: ArrayBuffer;
+          const arrayBuffer = convertToArrayBuffer(rawData);
           
-          try {
-            if (rawData instanceof ArrayBuffer) {
-              arrayBuffer = rawData;
-            } else if (rawData && typeof rawData === 'object' && rawData.buffer instanceof ArrayBuffer) {
-              // Handle DataView or Uint8Array
-              arrayBuffer = rawData.buffer.slice(
-                rawData.byteOffset || 0, 
-                (rawData.byteOffset || 0) + (rawData.byteLength || rawData.buffer.byteLength)
-              );
-            } else {
-              console.log('Unknown manufacturer data type, attempting direct conversion');
-              // Try to convert unknown type to ArrayBuffer
-              const uint8Array = new Uint8Array(rawData);
-              arrayBuffer = uint8Array.buffer;
-            }
-            
+          if (arrayBuffer) {
             console.log('ArrayBuffer byteLength:', arrayBuffer.byteLength);
             
             // Pass ArrayBuffer directly to parseIBeaconData
@@ -173,8 +204,8 @@ export const useBLEScanner = (
             } else if (beaconInfo) {
               console.log('Found iBeacon but UUID mismatch:', beaconInfo.uuid, 'vs', uuid);
             }
-          } catch (conversionError) {
-            console.error('Error converting manufacturer data to ArrayBuffer:', conversionError);
+          } else {
+            console.error('Failed to convert manufacturer data to ArrayBuffer');
           }
         } else {
           console.log('No Apple manufacturer data found');
