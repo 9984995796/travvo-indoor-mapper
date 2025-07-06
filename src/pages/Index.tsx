@@ -28,7 +28,7 @@ const Index = () => {
     { id: 1005, x: 2.5, y: 2.5, name: "Center" }
   ];
 
-  const uuid = "12345678-1234-1234-1234-1234567890ab";
+  const uuid = "ab907856-3412-3412-3412-341278563412";
   const txPower = -59;
 
   // Get platform info for debugging
