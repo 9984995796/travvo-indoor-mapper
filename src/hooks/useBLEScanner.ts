@@ -236,35 +236,37 @@ export const useBLEScanner = (
           name: result.device?.name || 'Unknown',
           rssi: result.rssi,
           txPower: result.txPower,
-          hasManufacturerData: !!result.manufacturerData
+          hasManufacturerData: !!result.manufacturerData,
+          serviceUuids: result.uuids || []
         });
 
-        // Check manufacturer data for iBeacon
+        // Log raw manufacturer data for debugging
         if (result.manufacturerData) {
-          console.log('📊 Manufacturer Data Keys:', Object.keys(result.manufacturerData));
+          console.log('📊 Raw Manufacturer Data:', result.manufacturerData);
           
-          // Check for Apple manufacturer data (0x004C)
-          const appleData = result.manufacturerData['76'] || result.manufacturerData['004C'] || result.manufacturerData[76];
+          // Check all possible manufacturer ID formats
+          const manufacturerKeys = Object.keys(result.manufacturerData);
+          console.log('🔑 Manufacturer Data Keys:', manufacturerKeys);
           
-          if (appleData) {
-            console.log('🍎 Apple manufacturer data found:', {
-              type: typeof appleData,
-              constructor: appleData?.constructor?.name,
-              dataInfo: getDataInfo(appleData)
+          manufacturerKeys.forEach(key => {
+            const data = result.manufacturerData![key];
+            console.log(`🏭 Manufacturer ${key}:`, {
+              type: typeof data,
+              isDataView: data instanceof DataView,
+              isArrayBuffer: data instanceof ArrayBuffer,
+              isArray: Array.isArray(data),
+              raw: data
             });
             
+            // Try to parse each manufacturer data entry
             try {
-              // Convert data to ArrayBuffer
-              const arrayBuffer = convertToArrayBuffer(appleData);
-              
-              if (arrayBuffer) {
-                console.log('🔍 Parsing iBeacon from ArrayBuffer, length:', arrayBuffer.byteLength);
-                
-                // Parse iBeacon data
+              const arrayBuffer = convertToArrayBuffer(data);
+              if (arrayBuffer && arrayBuffer.byteLength >= 25) {
+                console.log(`🔍 Trying to parse manufacturer ${key} as iBeacon...`);
                 const beaconInfo = parseIBeaconData(arrayBuffer, result.rssi || -100);
                 
                 if (beaconInfo) {
-                  console.log('📍 Parsed iBeacon:', beaconInfo);
+                  console.log('📍 Parsed iBeacon from manufacturer', key, ':', beaconInfo);
                   
                   // Check UUID match (case insensitive)
                   if (beaconInfo.uuid.toLowerCase() === uuid.toLowerCase()) {
@@ -275,20 +277,24 @@ export const useBLEScanner = (
                     console.log('❌ UUID mismatch:', beaconInfo.uuid, 'vs', uuid);
                     setScanStatus(`Wrong UUID: ${beaconInfo.uuid.slice(0, 8)}...`);
                   }
-                } else {
-                  console.log('❌ Failed to parse iBeacon data');
                 }
-              } else {
-                console.error('❌ Failed to convert to ArrayBuffer');
               }
             } catch (parseError) {
-              console.error('❌ Error parsing manufacturer data:', parseError);
+              console.log(`❌ Failed to parse manufacturer ${key}:`, parseError);
             }
-          } else {
-            console.log('📱 No Apple manufacturer data found');
-          }
+          });
         } else {
           console.log('📱 No manufacturer data in advertisement');
+        }
+
+        // Also check service data for beacons that might advertise differently
+        if (result.uuids && result.uuids.length > 0) {
+          console.log('🔧 Service UUIDs found:', result.uuids);
+          result.uuids.forEach(serviceUuid => {
+            if (serviceUuid.toLowerCase().includes(uuid.toLowerCase().replace(/-/g, ''))) {
+              console.log('🎯 Service UUID might match our beacon UUID!');
+            }
+          });
         }
       });
 
@@ -303,36 +309,53 @@ export const useBLEScanner = (
     }
   };
 
-  // Helper function to get data info without type errors
-  const getDataInfo = (data: any): string => {
-    if (data instanceof DataView) {
-      return `DataView(${data.byteLength} bytes)`;
-    } else if (data instanceof ArrayBuffer) {
-      return `ArrayBuffer(${data.byteLength} bytes)`;
-    } else if (Array.isArray(data)) {
-      return `Array(${data.length} items)`;
-    } else if (data && typeof data === 'object' && 'buffer' in data) {
-      return `TypedArray(${data.byteLength || data.length || 'unknown'} bytes)`;
-    }
-    return 'unknown format';
-  };
-
-  // Helper function to convert various data formats to ArrayBuffer
+  // Improved helper function to convert various data formats to ArrayBuffer
   const convertToArrayBuffer = (data: any): ArrayBuffer | null => {
     try {
+      console.log('🔄 Converting data to ArrayBuffer:', {
+        type: typeof data,
+        constructor: data?.constructor?.name,
+        isDataView: data instanceof DataView,
+        isArrayBuffer: data instanceof ArrayBuffer,
+        isTypedArray: data && typeof data === 'object' && 'buffer' in data,
+        isArray: Array.isArray(data)
+      });
+
       if (data instanceof ArrayBuffer) {
+        console.log('✅ Already ArrayBuffer, length:', data.byteLength);
         return data;
-      } else if (data instanceof DataView) {
+      } 
+      
+      if (data instanceof DataView) {
+        console.log('✅ Converting DataView to ArrayBuffer, length:', data.byteLength);
         return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-      } else if (data && typeof data === 'object' && 'buffer' in data) {
-        const typedArray = data as any;
-        return typedArray.buffer.slice(typedArray.byteOffset, typedArray.byteOffset + typedArray.byteLength);
-      } else if (Array.isArray(data)) {
+      } 
+      
+      // Handle typed arrays (Uint8Array, etc.)
+      if (data && typeof data === 'object' && 'buffer' in data && 'byteOffset' in data && 'byteLength' in data) {
+        console.log('✅ Converting TypedArray to ArrayBuffer, length:', data.byteLength);
+        return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+      } 
+      
+      if (Array.isArray(data)) {
+        console.log('✅ Converting Array to ArrayBuffer, length:', data.length);
         return new Uint8Array(data).buffer;
       }
+      
+      // Try to convert object with numeric properties
+      if (data && typeof data === 'object') {
+        const keys = Object.keys(data).filter(k => !isNaN(Number(k))).sort((a, b) => Number(a) - Number(b));
+        if (keys.length > 0) {
+          console.log('✅ Converting object with numeric keys to ArrayBuffer, keys:', keys.length);
+          const bytes = keys.map(k => data[k]);
+          return new Uint8Array(bytes).buffer;
+        }
+      }
+      
+      console.log('❌ Cannot convert data to ArrayBuffer');
       return null;
     } catch (error) {
-      console.error('Error converting to ArrayBuffer:', error);
+      console.error('❌ Error converting to ArrayBuffer:', error);
       return null;
     }
   };
