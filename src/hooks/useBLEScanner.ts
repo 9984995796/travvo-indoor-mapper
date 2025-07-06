@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { BleClient, ScanResult, ScanMode } from '@capacitor-community/bluetooth-le';
@@ -39,9 +38,10 @@ export const useBLEScanner = (
   // Check if device supports BLE
   const checkBLESupport = async () => {
     try {
-      const available = await BleClient.isAvailable();
-      console.log('BLE Available:', available);
-      return available;
+      // Since isAvailable doesn't exist, we'll try to initialize to check support
+      await BleClient.initialize();
+      console.log('BLE Available: true');
+      return true;
     } catch (error) {
       console.error('BLE availability check failed:', error);
       return false;
@@ -120,8 +120,6 @@ export const useBLEScanner = (
             return;
           }
 
-          console.log('Initializing BLE Client...');
-          await BleClient.initialize({ androidNeverForLocation: false });
           console.log('✅ BLE Client initialized');
           setBleInitialized(true);
           
@@ -251,7 +249,9 @@ export const useBLEScanner = (
             console.log('🍎 Apple manufacturer data found:', {
               type: typeof appleData,
               constructor: appleData?.constructor?.name,
-              length: appleData?.length || appleData?.byteLength || 'unknown'
+              byteLength: appleData instanceof DataView ? appleData.byteLength : 
+                         appleData instanceof ArrayBuffer ? appleData.byteLength :
+                         Array.isArray(appleData) ? appleData.length : 'unknown'
             });
             
             try {
