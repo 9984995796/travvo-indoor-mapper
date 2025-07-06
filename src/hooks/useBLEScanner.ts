@@ -1,7 +1,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { BleClient, ScanResult, ScanMode, BleDevice } from '@capacitor-community/bluetooth-le';
+import { BleClient, ScanResult, ScanMode } from '@capacitor-community/bluetooth-le';
 import { parseIBeaconData, rssiToDistance, BeaconData, BeaconInfo } from '@/utils/beaconUtils';
 import { KalmanFilter } from '@/utils/kalmanFilter';
 import { calculatePosition } from '@/utils/trilateration';
@@ -17,52 +17,6 @@ interface Position {
   x: number;
   y: number;
 }
-
-// Helper function to safely convert data to ArrayBuffer
-const convertToArrayBuffer = (data: unknown): ArrayBuffer | null => {
-  try {
-    // Direct ArrayBuffer
-    if (data instanceof ArrayBuffer) {
-      return data;
-    }
-    
-    // DataView
-    if (data instanceof DataView) {
-      return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-    }
-    
-    // Uint8Array or other TypedArray
-    if (data && typeof data === 'object' && 'buffer' in data && 'byteOffset' in data && 'byteLength' in data) {
-      const typedArray = data as { buffer: ArrayBuffer; byteOffset: number; byteLength: number };
-      return typedArray.buffer.slice(typedArray.byteOffset, typedArray.byteOffset + typedArray.byteLength);
-    }
-    
-    // Array of numbers
-    if (Array.isArray(data) && data.every(item => typeof item === 'number')) {
-      const uint8Array = new Uint8Array(data);
-      return uint8Array.buffer;
-    }
-    
-    // String (hex or base64)
-    if (typeof data === 'string') {
-      // Try hex string
-      if (/^[0-9a-fA-F]+$/.test(data) && data.length % 2 === 0) {
-        const bytes = [];
-        for (let i = 0; i < data.length; i += 2) {
-          bytes.push(parseInt(data.substr(i, 2), 16));
-        }
-        const uint8Array = new Uint8Array(bytes);
-        return uint8Array.buffer;
-      }
-    }
-    
-    console.error('Unable to convert data to ArrayBuffer:', typeof data, data);
-    return null;
-  } catch (error) {
-    console.error('Error in convertToArrayBuffer:', error);
-    return null;
-  }
-};
 
 export const useBLEScanner = (
   beacons: Beacon[],
@@ -81,6 +35,18 @@ export const useBLEScanner = (
   const [scanStatus, setScanStatus] = useState<string>('');
   const [devicesFound, setDevicesFound] = useState<number>(0);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Check if device supports BLE
+  const checkBLESupport = async () => {
+    try {
+      const available = await BleClient.isAvailable();
+      console.log('BLE Available:', available);
+      return available;
+    } catch (error) {
+      console.error('BLE availability check failed:', error);
+      return false;
+    }
+  };
 
   // Check Bluetooth state
   const checkBluetoothState = async () => {
@@ -105,74 +71,97 @@ export const useBLEScanner = (
     }
   };
 
-  // Request permissions
-  const requestPermissions = async () => {
+  // Request all necessary permissions
+  const requestAllPermissions = async () => {
     try {
-      console.log('Requesting BLE permissions...');
+      console.log('🔐 Requesting BLE permissions...');
+      
+      // Request location permission first
       await BleClient.requestLEScan({
         services: [],
-        allowDuplicates: false
+        allowDuplicates: true,
+        scanMode: ScanMode.SCAN_MODE_LOW_LATENCY
       }, () => {});
       
-      // Stop immediately after permission request
+      // Stop the permission scan immediately
       await BleClient.stopLEScan();
-      console.log('✅ BLE permissions granted');
+      
+      console.log('✅ All BLE permissions granted');
+      setScanStatus('Permissions granted');
       return true;
     } catch (error) {
       console.error('❌ Permission request failed:', error);
       setBleError(`Permission denied: ${error}`);
+      setScanStatus(`Permission failed: ${error}`);
       return false;
     }
   };
 
-  // Enhanced platform detection with detailed logging
+  // Enhanced platform detection
   useEffect(() => {
-    const checkPlatform = async () => {
+    const initializeBLE = async () => {
       const platform = Capacitor.getPlatform();
       const isNative = Capacitor.isNativePlatform();
       
-      console.log('=== Platform Detection ===');
+      console.log('=== BLE Initialization ===');
       console.log('Platform:', platform);
       console.log('Is Native:', isNative);
       console.log('User Agent:', navigator.userAgent);
-      console.log('Capacitor Available:', typeof Capacitor !== 'undefined');
       
       setIsNativePlatform(isNative);
       
       if (isNative) {
         try {
-          console.log('Attempting BLE initialization...');
-          await BleClient.initialize();
-          console.log('✅ BLE Client initialized successfully');
+          // Check BLE support first
+          const bleSupported = await checkBLESupport();
+          if (!bleSupported) {
+            setBleError('BLE not supported on this device');
+            setScanStatus('BLE not supported');
+            return;
+          }
+
+          console.log('Initializing BLE Client...');
+          await BleClient.initialize({ androidNeverForLocation: false });
+          console.log('✅ BLE Client initialized');
           setBleInitialized(true);
           
-          // Check Bluetooth state after initialization
-          await checkBluetoothState();
-          setBleError(null);
+          // Check Bluetooth state
+          const bluetoothOk = await checkBluetoothState();
+          if (bluetoothOk) {
+            setBleError(null);
+            setScanStatus('BLE ready');
+          }
         } catch (error) {
           console.error('❌ BLE initialization failed:', error);
           setBleError(`BLE initialization failed: ${error}`);
           setBleInitialized(false);
+          setScanStatus(`Init failed: ${error}`);
         }
       } else {
-        console.log('❌ Not running on native platform - BLE unavailable');
+        console.log('❌ Not running on native platform');
         setBleError('BLE requires native platform (Android/iOS)');
-        setBleInitialized(false);
+        setScanStatus('Not native platform');
       }
     };
     
-    checkPlatform();
+    initializeBLE();
   }, []);
 
-  // Process beacon data (real only)
+  // Process beacon data from scan results
   const processBeaconData = useCallback((beaconInfo: BeaconInfo) => {
     const beacon = beacons.find(b => b.id === beaconInfo.major);
     if (!beacon) {
-      console.log('Unknown beacon major:', beaconInfo.major);
+      console.log('⚠️ Unknown beacon major:', beaconInfo.major, 'Expected:', beacons.map(b => b.id));
       return;
     }
 
-    console.log('✅ Processing real beacon data:', beaconInfo);
+    console.log('✅ Processing beacon:', {
+      name: beacon.name,
+      major: beaconInfo.major,
+      minor: beaconInfo.minor,
+      rssi: beaconInfo.rssi,
+      uuid: beaconInfo.uuid
+    });
 
     // Apply Kalman filter
     let filteredRSSI = beaconInfo.rssi;
@@ -182,7 +171,7 @@ export const useBLEScanner = (
 
     const calculatedDistance = rssiToDistance(filteredRSSI, beaconInfo.txPower || txPower);
     
-    // Update beacon data state with real values only
+    // Update beacon data state
     setBeaconData(prev => {
       const newBeacon: BeaconData = {
         id: beacon.id,
@@ -198,105 +187,137 @@ export const useBLEScanner = (
         name: beacon.name
       };
 
-      return prev.filter(b => b.id !== beacon.id).concat(newBeacon);
+      const filtered = prev.filter(b => b.id !== beacon.id);
+      return [...filtered, newBeacon];
     });
   }, [beacons, kalmanFilters, txPower]);
 
-  // Real BLE scanning function with enhanced error handling
+  // Enhanced BLE scanning with better manufacturer data handling
   const scanForBeacons = async () => {
     if (!isNativePlatform || !bleInitialized) {
       const errorMsg = !isNativePlatform ? 
-        'BLE scanning requires native platform (Android/iOS)' : 
-        'BLE not initialized - check permissions';
+        'BLE scanning requires native platform' : 
+        'BLE not initialized';
       setBleError(errorMsg);
-      setScanStatus('Cannot scan - ' + errorMsg);
-      console.error('Cannot start scan:', errorMsg);
+      setScanStatus(errorMsg);
       return;
     }
 
     try {
       console.log('=== Starting Enhanced BLE Scan ===');
+      console.log('Target UUID:', uuid);
+      console.log('Expected Majors:', beacons.map(b => b.id));
       
-      // Check Bluetooth state first
+      // Check Bluetooth state
       const bluetoothOk = await checkBluetoothState();
       if (!bluetoothOk) {
         return;
       }
 
-      // Request permissions if needed
-      const permissionsOk = await requestPermissions();
+      // Request permissions
+      const permissionsOk = await requestAllPermissions();
       if (!permissionsOk) {
         return;
       }
 
-      console.log('Looking for UUID:', uuid);
       setBleError(null);
-      setScanStatus('Scanning for beacons...');
+      setScanStatus('Scanning active...');
       setDevicesFound(0);
       
-      // Start scanning with enhanced configuration
+      // Start scanning with optimized settings
       await BleClient.requestLEScan({
-        services: [], // Empty to scan all devices
-        allowDuplicates: true, // Allow multiple readings from same device
-        scanMode: ScanMode.SCAN_MODE_LOW_LATENCY // Fastest scanning
+        services: [],
+        allowDuplicates: true,
+        scanMode: ScanMode.SCAN_MODE_LOW_LATENCY
       }, (result: ScanResult) => {
-        console.log('📡 BLE device detected:', {
+        setDevicesFound(prev => prev + 1);
+        
+        console.log('📡 BLE Device Found:', {
           deviceId: result.device?.deviceId,
           name: result.device?.name || 'Unknown',
           rssi: result.rssi,
+          txPower: result.txPower,
           hasManufacturerData: !!result.manufacturerData
         });
-        
-        setDevicesFound(prev => prev + 1);
-        setScanStatus(`Scanning... (${devicesFound + 1} devices found)`);
-        
-        // Parse iBeacon data from advertisement
-        const manufacturerData = result.manufacturerData;
-        if (manufacturerData && manufacturerData['76']) { // Apple company identifier
-          const rawData = manufacturerData['76'];
-          console.log('🍎 Found Apple manufacturer data, parsing iBeacon...');
-          console.log('Raw data type:', rawData?.constructor?.name);
+
+        // Check manufacturer data for iBeacon
+        if (result.manufacturerData) {
+          console.log('📊 Manufacturer Data Keys:', Object.keys(result.manufacturerData));
           
-          // Convert to ArrayBuffer safely
-          const arrayBuffer = convertToArrayBuffer(rawData);
+          // Check for Apple manufacturer data (0x004C)
+          const appleData = result.manufacturerData['76'] || result.manufacturerData['004C'] || result.manufacturerData[76];
           
-          if (arrayBuffer) {
-            console.log('ArrayBuffer byteLength:', arrayBuffer.byteLength);
+          if (appleData) {
+            console.log('🍎 Apple manufacturer data found:', {
+              type: typeof appleData,
+              constructor: appleData?.constructor?.name,
+              length: appleData?.length || appleData?.byteLength || 'unknown'
+            });
             
-            // Pass ArrayBuffer directly to parseIBeaconData
-            const beaconInfo = parseIBeaconData(arrayBuffer, result.rssi || -100);
-            
-            if (beaconInfo && beaconInfo.uuid.toLowerCase() === uuid.toLowerCase()) {
-              console.log('🎯 Found matching beacon:', beaconInfo);
-              setScanStatus(`Found beacon ${beaconInfo.major}!`);
-              processBeaconData(beaconInfo);
-            } else if (beaconInfo) {
-              console.log('🔍 Found iBeacon but UUID mismatch:', beaconInfo.uuid, 'vs', uuid);
-              setScanStatus(`Found other beacon (UUID: ${beaconInfo.uuid.slice(0, 8)}...)`);
+            try {
+              // Convert data to ArrayBuffer
+              let arrayBuffer: ArrayBuffer;
+              
+              if (appleData instanceof ArrayBuffer) {
+                arrayBuffer = appleData;
+              } else if (appleData instanceof DataView) {
+                arrayBuffer = appleData.buffer.slice(appleData.byteOffset, appleData.byteOffset + appleData.byteLength);
+              } else if (appleData && typeof appleData === 'object' && 'buffer' in appleData) {
+                const typedArray = appleData as any;
+                arrayBuffer = typedArray.buffer.slice(typedArray.byteOffset, typedArray.byteOffset + typedArray.byteLength);
+              } else if (Array.isArray(appleData)) {
+                arrayBuffer = new Uint8Array(appleData).buffer;
+              } else {
+                console.error('❌ Unknown manufacturer data format:', typeof appleData);
+                return;
+              }
+              
+              console.log('🔍 Parsing iBeacon from ArrayBuffer, length:', arrayBuffer.byteLength);
+              
+              // Parse iBeacon data
+              const beaconInfo = parseIBeaconData(arrayBuffer, result.rssi || -100);
+              
+              if (beaconInfo) {
+                console.log('📍 Parsed iBeacon:', beaconInfo);
+                
+                // Check UUID match (case insensitive)
+                if (beaconInfo.uuid.toLowerCase() === uuid.toLowerCase()) {
+                  console.log('🎯 UUID MATCH! Processing beacon...');
+                  setScanStatus(`Found beacon ${beaconInfo.major}!`);
+                  processBeaconData(beaconInfo);
+                } else {
+                  console.log('❌ UUID mismatch:', beaconInfo.uuid, 'vs', uuid);
+                  setScanStatus(`Wrong UUID: ${beaconInfo.uuid.slice(0, 8)}...`);
+                }
+              } else {
+                console.log('❌ Failed to parse iBeacon data');
+              }
+            } catch (parseError) {
+              console.error('❌ Error parsing manufacturer data:', parseError);
             }
           } else {
-            console.error('Failed to convert manufacturer data to ArrayBuffer');
+            console.log('📱 No Apple manufacturer data found');
           }
         } else {
-          console.log('📱 Device without Apple manufacturer data:', result.device?.name || 'Unknown');
+          console.log('📱 No manufacturer data in advertisement');
         }
       });
 
-      console.log('✅ BLE scanning started successfully');
-      setScanStatus('Scanning active...');
+      console.log('✅ BLE scan started successfully');
+      setScanStatus('Scanning for beacons...');
+      
     } catch (error) {
       console.error('❌ BLE scanning error:', error);
-      setBleError(`BLE scanning failed: ${error}`);
-      setScanStatus(`Scan failed: ${error}`);
+      setBleError(`Scan failed: ${error}`);
+      setScanStatus(`Scan error: ${error}`);
       setIsScanning(false);
     }
   };
 
-  // Position calculation loop for real beacon data
+  // Position calculation from real beacon data
   const calculateFromRealBeacons = useCallback(() => {
     if (!isScanning || !isNativePlatform || !bleInitialized) return;
 
-    // Calculate position from real beacon data only
     if (beaconData.length >= 3) {
       const distances: { [key: number]: number } = {};
       beaconData.forEach(beacon => {
@@ -308,23 +329,21 @@ export const useBLEScanner = (
       setPositionHistory(prev => [...prev.slice(-50), newPosition]);
       
       console.log('📍 Position calculated:', newPosition, 'from', beaconData.length, 'beacons');
-      setScanStatus(`Position calculated from ${beaconData.length} beacons`);
+      setScanStatus(`Position from ${beaconData.length} beacons`);
     } else {
-      setScanStatus(`Need 3+ beacons for positioning (have ${beaconData.length})`);
+      setScanStatus(`Need 3+ beacons (have ${beaconData.length})`);
     }
   }, [isScanning, beaconData, currentPosition, isNativePlatform, bleInitialized, beacons]);
 
-  // Start/stop scanning
+  // Start/stop scanning effect
   useEffect(() => {
     if (isScanning) {
       if (isNativePlatform && bleInitialized) {
-        console.log('Starting scan and position calculation...');
         scanForBeacons();
-        intervalRef.current = setInterval(calculateFromRealBeacons, 1000);
+        intervalRef.current = setInterval(calculateFromRealBeacons, 2000); // Every 2 seconds
       } else {
-        console.log('Cannot scan - native platform:', isNativePlatform, 'BLE initialized:', bleInitialized);
-        setScanStatus('Cannot scan - platform/init issue');
         setIsScanning(false);
+        setScanStatus('Cannot scan - platform/init issue');
       }
     } else {
       if (intervalRef.current) {
@@ -332,7 +351,6 @@ export const useBLEScanner = (
       }
       if (isNativePlatform && bleInitialized) {
         BleClient.stopLEScan().catch(console.error);
-        console.log('🛑 BLE scan stopped');
         setScanStatus('Scan stopped');
       }
     }
@@ -346,18 +364,16 @@ export const useBLEScanner = (
 
   const toggleScanning = async () => {
     if (!isNativePlatform) {
-      setBleError('BLE scanning requires native platform (Android/iOS)');
-      setScanStatus('Platform not supported');
+      setBleError('BLE requires native platform');
       return;
     }
     
     if (!bleInitialized) {
-      setBleError('BLE not initialized - check app permissions');
-      setScanStatus('BLE not initialized');
+      setBleError('BLE not initialized');
       return;
     }
 
-    // Check Bluetooth state before toggling
+    // Check Bluetooth before starting
     if (!isScanning) {
       const bluetoothOk = await checkBluetoothState();
       if (!bluetoothOk) {
@@ -367,13 +383,12 @@ export const useBLEScanner = (
     
     console.log('Toggle scanning:', !isScanning);
     setIsScanning(!isScanning);
+    
     if (!isScanning) {
+      setBeaconData([]);
       setPositionHistory([]);
       setBleError(null);
-      setScanStatus('Starting scan...');
       setDevicesFound(0);
-    } else {
-      setScanStatus('Stopping scan...');
     }
   };
 

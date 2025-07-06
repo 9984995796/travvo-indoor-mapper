@@ -21,48 +21,59 @@ export interface BeaconData {
   name: string;
 }
 
-// Parse iBeacon advertisement data - Fixed to accept ArrayBuffer
+// Enhanced iBeacon parser with better error handling
 export const parseIBeaconData = (manufacturerDataBuffer: ArrayBuffer, rssi: number): BeaconInfo | null => {
   try {
-    // Create DataView from the ArrayBuffer
-    const manufacturerData = new DataView(manufacturerDataBuffer);
+    console.log('🔍 parseIBeaconData called with buffer length:', manufacturerDataBuffer.byteLength);
     
-    // iBeacon format: 
-    // Bytes 0-1: Company identifier (0x004C for Apple)
-    // Byte 2: iBeacon type (0x02)
-    // Byte 3: iBeacon length (0x15)
-    // Bytes 4-19: UUID (16 bytes)
-    // Bytes 20-21: Major (2 bytes)
-    // Bytes 22-23: Minor (2 bytes)
-    // Byte 24: TX Power (1 byte)
-    
-    if (manufacturerData.byteLength < 25) {
-      console.log('Manufacturer data too short:', manufacturerData.byteLength);
+    if (manufacturerDataBuffer.byteLength < 25) {
+      console.log('❌ Buffer too short for iBeacon:', manufacturerDataBuffer.byteLength, 'bytes (need 25)');
       return null;
     }
+
+    const dataView = new DataView(manufacturerDataBuffer);
     
-    const companyId = manufacturerData.getUint16(0, true);
-    const beaconType = manufacturerData.getUint8(2);
-    const beaconLength = manufacturerData.getUint8(3);
+    // Log the first few bytes for debugging
+    const firstBytes = [];
+    for (let i = 0; i < Math.min(8, manufacturerDataBuffer.byteLength); i++) {
+      firstBytes.push('0x' + dataView.getUint8(i).toString(16).padStart(2, '0'));
+    }
+    console.log('📊 First bytes:', firstBytes.join(' '));
     
-    console.log('Parsing iBeacon data:', {
-      companyId: companyId.toString(16),
-      beaconType: beaconType.toString(16),
-      beaconLength: beaconLength.toString(16)
+    // iBeacon format validation
+    const companyId = dataView.getUint16(0, true); // Little endian
+    const beaconType = dataView.getUint8(2);
+    const beaconLength = dataView.getUint8(3);
+    
+    console.log('🏷️ iBeacon header:', {
+      companyId: '0x' + companyId.toString(16),
+      beaconType: '0x' + beaconType.toString(16),
+      beaconLength: '0x' + beaconLength.toString(16)
     });
     
-    // Check if it's an iBeacon (Apple company ID and correct format)
-    if (companyId !== 0x004C || beaconType !== 0x02 || beaconLength !== 0x15) {
-      console.log('Not a valid iBeacon format');
+    // Check for Apple iBeacon format
+    if (companyId !== 0x004C) {
+      console.log('❌ Not Apple company ID:', '0x' + companyId.toString(16));
       return null;
     }
     
-    // Extract UUID
+    if (beaconType !== 0x02) {
+      console.log('❌ Not iBeacon type:', '0x' + beaconType.toString(16));
+      return null;
+    }
+    
+    if (beaconLength !== 0x15) {
+      console.log('❌ Wrong iBeacon length:', '0x' + beaconLength.toString(16));
+      return null;
+    }
+    
+    // Extract UUID (16 bytes starting at offset 4)
     const uuidBytes = [];
     for (let i = 4; i < 20; i++) {
-      uuidBytes.push(manufacturerData.getUint8(i).toString(16).padStart(2, '0'));
+      uuidBytes.push(dataView.getUint8(i).toString(16).padStart(2, '0'));
     }
-    const extractedUuid = [
+    
+    const uuid = [
       uuidBytes.slice(0, 4).join(''),
       uuidBytes.slice(4, 6).join(''),
       uuidBytes.slice(6, 8).join(''),
@@ -70,28 +81,24 @@ export const parseIBeaconData = (manufacturerDataBuffer: ArrayBuffer, rssi: numb
       uuidBytes.slice(10, 16).join('')
     ].join('-');
     
-    // Extract Major and Minor
-    const major = manufacturerData.getUint16(20, false); // Big endian
-    const minor = manufacturerData.getUint16(22, false); // Big endian
-    const txPowerByte = manufacturerData.getInt8(24);
+    // Extract Major and Minor (big endian)
+    const major = dataView.getUint16(20, false);
+    const minor = dataView.getUint16(22, false);
+    const txPowerByte = dataView.getInt8(24);
     
-    console.log('Parsed iBeacon:', {
-      uuid: extractedUuid,
-      major,
-      minor,
-      txPower: txPowerByte,
-      rssi
-    });
-    
-    return {
-      uuid: extractedUuid,
+    const beaconInfo = {
+      uuid: uuid,
       major: major,
       minor: minor,
       rssi: rssi,
       txPower: txPowerByte
     };
+    
+    console.log('✅ Successfully parsed iBeacon:', beaconInfo);
+    return beaconInfo;
+    
   } catch (error) {
-    console.error('Error parsing iBeacon data:', error);
+    console.error('❌ Error parsing iBeacon data:', error);
     return null;
   }
 };
@@ -101,5 +108,8 @@ export const rssiToDistance = (rssi: number, txPower = -59) => {
   if (rssi === 0) return -1.0;
   
   const ratio = (txPower - rssi) / 20.0;
-  return Math.pow(10, ratio);
+  const distance = Math.pow(10, ratio);
+  
+  // Apply some bounds (0.1m to 50m)
+  return Math.max(0.1, Math.min(50, distance));
 };
