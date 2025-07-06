@@ -58,6 +58,9 @@ const Index = () => {
     positionHistory,
     isNativePlatform,
     bleError,
+    bluetoothEnabled,
+    scanStatus,
+    devicesFound,
     toggleScanning,
     resetScanning
   } = useBLEScanner(beacons, kalmanFilters, uuid, txPower);
@@ -91,6 +94,9 @@ const Index = () => {
             <Badge variant="outline" className={`${isNativePlatform ? 'text-green-200 border-green-300' : 'text-red-200 border-red-300'}`}>
               {isNativePlatform ? 'Native Platform Detected' : `Platform: ${platformInfo.platform}`}
             </Badge>
+            <Badge variant="outline" className={`${bluetoothEnabled ? 'text-green-200 border-green-300' : 'text-red-200 border-red-300'}`}>
+              Bluetooth: {bluetoothEnabled ? 'Enabled' : 'Disabled'}
+            </Badge>
           </div>
         </div>
 
@@ -103,7 +109,7 @@ const Index = () => {
                 variant={isScanning ? "destructive" : "default"}
                 size="lg"
                 className="min-w-32"
-                disabled={!isNativePlatform}
+                disabled={!isNativePlatform || !bluetoothEnabled}
               >
                 {isScanning ? "Stop Scanning" : "Start BLE Scan"}
               </Button>
@@ -115,6 +121,29 @@ const Index = () => {
                 Reset
               </Button>
             </div>
+            
+            {/* Enhanced Scan Status */}
+            {isNativePlatform && (
+              <div className="mb-4 p-4 bg-slate-700/30 border border-slate-600 rounded-lg">
+                <h3 className="text-white font-semibold mb-2">BLE Scan Status</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <p className="text-gray-400">Status:</p>
+                    <p className={`font-mono ${isScanning ? 'text-green-400' : 'text-gray-300'}`}>
+                      {scanStatus || 'Ready to scan'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-gray-400">Devices Found:</p>
+                    <p className="text-blue-400 font-mono">{devicesFound}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-400">Beacons Detected:</p>
+                    <p className="text-green-400 font-mono">{beaconData.length}/5</p>
+                  </div>
+                </div>
+              </div>
+            )}
             
             {/* Debug Information */}
             <div className="mb-4 p-4 bg-slate-700/30 border border-slate-600 rounded-lg">
@@ -137,6 +166,15 @@ const Index = () => {
               </div>
             </div>
             
+            {!bluetoothEnabled && isNativePlatform && (
+              <div className="text-center p-4 bg-orange-900/20 border border-orange-500/30 rounded-lg">
+                <p className="text-orange-200 font-semibold">🔵 Bluetooth Required</p>
+                <p className="text-orange-300 text-sm mt-2">
+                  Please enable Bluetooth in your device settings and restart the app.
+                </p>
+              </div>
+            )}
+
             {!isNativePlatform && (
               <div className="text-center p-4 bg-red-900/20 border border-red-500/30 rounded-lg">
                 <p className="text-red-200 font-semibold">⚠️ BLE Scanning Issue Detected</p>
