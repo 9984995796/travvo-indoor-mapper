@@ -188,6 +188,45 @@ export const useBLEScanner = (
     });
   }, [beacons, kalmanFilters, txPower]);
 
+  // Helper function to safely convert manufacturer data to ArrayBuffer
+  const convertToArrayBuffer = (data: any): ArrayBuffer | null => {
+    try {
+      // Direct ArrayBuffer
+      if (data instanceof ArrayBuffer) {
+        return data;
+      }
+      
+      // DataView
+      if (data instanceof DataView) {
+        return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+      }
+      
+      // Typed arrays (Uint8Array, etc.)
+      if (data && typeof data === 'object' && 'buffer' in data && 'byteOffset' in data && 'byteLength' in data) {
+        return (data as any).buffer.slice((data as any).byteOffset, (data as any).byteOffset + (data as any).byteLength);
+      }
+      
+      // Array of numbers
+      if (Array.isArray(data)) {
+        return new Uint8Array(data).buffer;
+      }
+      
+      // Object with numeric keys (common in Capacitor)
+      if (data && typeof data === 'object') {
+        const keys = Object.keys(data).filter(k => !isNaN(Number(k))).sort((a, b) => Number(a) - Number(b));
+        if (keys.length > 0) {
+          const bytes = keys.map(k => data[k]);
+          return new Uint8Array(bytes).buffer;
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      console.log('❌ Error converting to ArrayBuffer:', error);
+      return null;
+    }
+  };
+
   // Enhanced BLE scanning with better manufacturer data handling
   const scanForBeacons = async () => {
     if (!isNativePlatform || !bleInitialized) {
@@ -248,68 +287,38 @@ export const useBLEScanner = (
             const data = result.manufacturerData![key];
             console.log(`🏭 Manufacturer ${key}:`, data);
             
-            try {
-              // Try different parsing approaches
-              let arrayBuffer: ArrayBuffer | null = null;
+            const arrayBuffer = convertToArrayBuffer(data);
+            
+            if (arrayBuffer && arrayBuffer.byteLength >= 25) {
+              console.log(`🔍 Trying to parse manufacturer ${key} as iBeacon (${arrayBuffer.byteLength} bytes)...`);
+              const beaconInfo = parseIBeaconData(arrayBuffer, result.rssi || -100);
               
-              // Direct ArrayBuffer
-              if (data instanceof ArrayBuffer) {
-                arrayBuffer = data;
-              }
-              // DataView
-              else if (data instanceof DataView) {
-                arrayBuffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-              }
-              // Uint8Array or similar
-              else if (data && typeof data === 'object' && 'buffer' in data) {
-                arrayBuffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-              }
-              // Array of numbers
-              else if (Array.isArray(data)) {
-                arrayBuffer = new Uint8Array(data).buffer;
-              }
-              // Object with numeric keys (common in Capacitor)
-              else if (data && typeof data === 'object') {
-                const keys = Object.keys(data).filter(k => !isNaN(Number(k))).sort((a, b) => Number(a) - Number(b));
-                if (keys.length > 0) {
-                  const bytes = keys.map(k => data[k]);
-                  arrayBuffer = new Uint8Array(bytes).buffer;
-                }
-              }
-              
-              if (arrayBuffer && arrayBuffer.byteLength >= 25) {
-                console.log(`🔍 Trying to parse manufacturer ${key} as iBeacon (${arrayBuffer.byteLength} bytes)...`);
-                const beaconInfo = parseIBeaconData(arrayBuffer, result.rssi || -100);
+              if (beaconInfo) {
+                console.log('📍 Parsed iBeacon from manufacturer', key, ':', beaconInfo);
                 
-                if (beaconInfo) {
-                  console.log('📍 Parsed iBeacon from manufacturer', key, ':', beaconInfo);
-                  
-                  // More flexible UUID matching - remove dashes and compare
-                  const cleanTargetUuid = uuid.toLowerCase().replace(/-/g, '');
-                  const cleanBeaconUuid = beaconInfo.uuid.toLowerCase().replace(/-/g, '');
-                  
-                  console.log('🔍 UUID Comparison:', {
-                    target: cleanTargetUuid,
-                    beacon: cleanBeaconUuid,
-                    match: cleanBeaconUuid === cleanTargetUuid
-                  });
-                  
-                  if (cleanBeaconUuid === cleanTargetUuid) {
-                    console.log('🎯 UUID MATCH! Processing beacon...');
-                    setScanStatus(`Found beacon ${beaconInfo.major}!`);
-                    processBeaconData(beaconInfo);
-                  } else {
-                    console.log('❌ UUID mismatch - not our beacon');
-                    setScanStatus(`Different UUID found`);
-                  }
+                // More flexible UUID matching - remove dashes and compare
+                const cleanTargetUuid = uuid.toLowerCase().replace(/-/g, '');
+                const cleanBeaconUuid = beaconInfo.uuid.toLowerCase().replace(/-/g, '');
+                
+                console.log('🔍 UUID Comparison:', {
+                  target: cleanTargetUuid,
+                  beacon: cleanBeaconUuid,
+                  match: cleanBeaconUuid === cleanTargetUuid
+                });
+                
+                if (cleanBeaconUuid === cleanTargetUuid) {
+                  console.log('🎯 UUID MATCH! Processing beacon...');
+                  setScanStatus(`Found beacon ${beaconInfo.major}!`);
+                  processBeaconData(beaconInfo);
                 } else {
-                  console.log('❌ Not a valid iBeacon format');
+                  console.log('❌ UUID mismatch - not our beacon');
+                  setScanStatus(`Different UUID found`);
                 }
               } else {
-                console.log(`❌ Insufficient data length: ${arrayBuffer ? arrayBuffer.byteLength : 0} bytes (need 25)`);
+                console.log('❌ Not a valid iBeacon format');
               }
-            } catch (parseError) {
-              console.log(`❌ Failed to parse manufacturer ${key}:`, parseError);
+            } else {
+              console.log(`❌ Insufficient data length: ${arrayBuffer ? arrayBuffer.byteLength : 0} bytes (need 25)`);
             }
           });
         } else {
