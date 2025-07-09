@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -22,16 +21,16 @@ const Index = () => {
     userAgent: ''
   });
 
-  // Your actual beacon configuration
+  // Updated beacon configuration with device names for name-based matching
   const beacons = [
-    { id: 1001, x: 0, y: 0, name: "Corner NW" },
-    { id: 1002, x: 5, y: 0, name: "Corner NE" },
-    { id: 1003, x: 0, y: 5, name: "Corner SW" },
-    { id: 1004, x: 5, y: 5, name: "Corner SE" },
-    { id: 1005, x: 2.5, y: 2.5, name: "Center" }
+    { id: 1001, x: 0, y: 0, name: "Corner NW", deviceName: "POI-1" },
+    { id: 1002, x: 5, y: 0, name: "Corner NE", deviceName: "POI-2" },
+    { id: 1003, x: 0, y: 5, name: "Corner SW", deviceName: "POI-3" },
+    { id: 1004, x: 5, y: 5, name: "Corner SE", deviceName: "POI-4" },
+    { id: 1005, x: 2.5, y: 2.5, name: "Center", deviceName: "POI-5" }
   ];
 
-  // CORRECTED UUID based on NRF Connect screenshots
+  // Keep UUID for backward compatibility, but now using name-based matching
   const uuid = "ab907856-3412-3412-3412-341278563412";
   const txPower = -59;
 
@@ -42,10 +41,10 @@ const Index = () => {
       isNative: Capacitor.isNativePlatform(),
       userAgent: navigator.userAgent
     });
-    console.log('🎯 CORRECTED BEACON CONFIGURATION:');
-    console.log('🎯 UUID (corrected):', uuid);
-    console.log('🎯 Expected from NRF:', 'AB90 7856-3412 3412-3412 3412-7856 3412');
-    console.log('🎯 Manufacturer data format should be: AB90 7856 3412 3412 3412 3412 7856 3412');
+    console.log('🎯 UPDATED BEACON CONFIGURATION (NAME-BASED):');
+    console.log('🎯 Target device names:', beacons.map(b => `${b.deviceName} (${b.name})`));
+    console.log('🎯 Matching method: Device names instead of UUID');
+    console.log('🎯 Expected names: POI-1, POI-2, POI-3, POI-4, POI-5');
     console.log('Platform Info:', {
       platform: Capacitor.getPlatform(),
       isNative: Capacitor.isNativePlatform(),
@@ -88,16 +87,16 @@ const Index = () => {
         {/* Header */}
         <div className="text-center space-y-2">
           <h1 className="text-4xl font-bold text-white">Travvo Indoor Positioning System</h1>
-          <p className="text-blue-200 text-lg">Real BLE Beacon-Based Navigation</p>
+          <p className="text-blue-200 text-lg">Name-Based BLE Beacon Navigation</p>
           <div className="flex justify-center gap-4 items-center flex-wrap">
             <Badge variant="outline" className="text-blue-200 border-blue-300">
-              UUID: {uuid.slice(0, 8)}...
+              Method: Device Names
             </Badge>
             <Badge variant="outline" className="text-blue-200 border-blue-300">
               5×5m Room
             </Badge>
             <Badge variant="outline" className="text-blue-200 border-blue-300">
-              5 ESP32 Beacons
+              POI-1 to POI-5
             </Badge>
             <Badge variant="outline" className={`${isNativePlatform ? 'text-green-200 border-green-300' : 'text-red-200 border-red-300'}`}>
               {isNativePlatform ? 'Native Platform Detected' : `Platform: ${platformInfo.platform}`}
@@ -132,7 +131,7 @@ const Index = () => {
                     className="min-w-32"
                     disabled={!isNativePlatform || !bluetoothEnabled}
                   >
-                    {isScanning ? "Stop Scanning" : "Start BLE Scan"}
+                    {isScanning ? "Stop Scanning" : "Start Name-Based Scan"}
                   </Button>
                   <Button 
                     onClick={resetSimulation}
@@ -146,7 +145,7 @@ const Index = () => {
                 {/* Enhanced Scan Status */}
                 {isNativePlatform && (
                   <div className="mb-4 p-4 bg-slate-700/30 border border-slate-600 rounded-lg">
-                    <h3 className="text-white font-semibold mb-2">BLE Scan Status</h3>
+                    <h3 className="text-white font-semibold mb-2">Name-Based BLE Scan Status</h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                       <div>
                         <p className="text-gray-400">Status:</p>
@@ -159,7 +158,7 @@ const Index = () => {
                         <p className="text-blue-400 font-mono">{devicesFound}</p>
                       </div>
                       <div>
-                        <p className="text-gray-400">Beacons Detected:</p>
+                        <p className="text-gray-400">Named Beacons:</p>
                         <p className="text-green-400 font-mono">{beaconData.length}/5</p>
                       </div>
                     </div>
@@ -175,15 +174,13 @@ const Index = () => {
                       <p className="text-white font-mono">{platformInfo.platform}</p>
                     </div>
                     <div>
-                      <p className="text-gray-400">Native Platform:</p>
-                      <p className={`font-mono ${platformInfo.isNative ? 'text-green-400' : 'text-red-400'}`}>
-                        {platformInfo.isNative ? 'Yes' : 'No'}
-                      </p>
+                      <p className="text-gray-400">Matching Method:</p>
+                      <p className="text-green-400 font-mono">Device Names</p>
                     </div>
                   </div>
                   <div className="mt-2">
-                    <p className="text-gray-400 text-xs">User Agent:</p>
-                    <p className="text-gray-300 text-xs font-mono break-all">{platformInfo.userAgent}</p>
+                    <p className="text-gray-400 text-xs">Expected Names:</p>
+                    <p className="text-green-300 text-xs font-mono">POI-1, POI-2, POI-3, POI-4, POI-5</p>
                   </div>
                 </div>
                 
@@ -237,7 +234,7 @@ const Index = () => {
                     </p>
                     {isNativePlatform && isScanning && (
                       <p className="text-green-400 text-sm mt-1">
-                        📡 Scanning for real BLE beacons...
+                        📡 Scanning for named beacons (POI-1 to POI-5)...
                       </p>
                     )}
                   </div>
@@ -249,7 +246,7 @@ const Index = () => {
                 <div className="p-6">
                   <h2 className="text-xl font-semibold text-white mb-4">Individual Beacon Scanner</h2>
                   <p className="text-gray-300 text-sm mb-6">
-                    Scan each POI beacon individually to test connectivity and view detailed information.
+                    Scan each POI beacon individually by device name to test connectivity and view detailed information.
                   </p>
                   <div className="space-y-4 max-h-96 overflow-y-auto">
                     {beacons.map(beacon => (
@@ -271,9 +268,9 @@ const Index = () => {
               {/* Original Beacon Data */}
               <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-sm">
                 <div className="p-6">
-                  <h2 className="text-xl font-semibold text-white mb-4">Combined Beacon Scanner</h2>
+                  <h2 className="text-xl font-semibold text-white mb-4">Combined Name-Based Scanner</h2>
                   <p className="text-gray-300 text-sm mb-4">
-                    This scans for all beacons simultaneously for position calculation.
+                    This scans for all beacons simultaneously by device names for position calculation.
                   </p>
                   <BeaconSimulator 
                     beacons={beaconData}
@@ -301,7 +298,7 @@ const Index = () => {
               <div className="p-6">
                 <h2 className="text-xl font-semibold text-white mb-4">General BLE Device Scanner</h2>
                 <p className="text-gray-300 text-sm mb-6">
-                  This scanner finds ALL BLE devices nearby (like nRF Connect). Use it to verify if your ESP32 beacons are advertising and if the app can detect BLE devices at all.
+                  This scanner finds ALL BLE devices nearby (like nRF Connect). Use it to verify if your ESP32 beacons are advertising with names POI-1 to POI-5.
                 </p>
                 <BLEDeviceScanner />
               </div>
@@ -311,10 +308,10 @@ const Index = () => {
 
         {/* Footer */}
         <div className="text-center text-gray-400 text-sm">
-          <p>Travvo Heritage Navigation System | Real BLE Indoor Positioning</p>
+          <p>Travvo Heritage Navigation System | Name-Based BLE Indoor Positioning</p>
           <p>Build natively with: npm run build && npx cap sync && npx cap run android</p>
           {isNativePlatform ? (
-            <p className="text-green-400">🟢 Native platform detected - BLE scanning available</p>
+            <p className="text-green-400">🟢 Native platform detected - Name-based BLE scanning available</p>
           ) : (
             <p className="text-red-400">🔴 Web platform detected - Build natively for BLE functionality</p>
           )}

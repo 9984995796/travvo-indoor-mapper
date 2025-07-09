@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { BleClient, ScanResult, ScanMode } from '@capacitor-community/bluetooth-le';
-import { parseIBeaconData, rssiToDistance, BeaconData, BeaconInfo } from '@/utils/beaconUtils';
+import { rssiToDistance, BeaconData } from '@/utils/beaconUtils';
 import { KalmanFilter } from '@/utils/kalmanFilter';
 import { calculatePosition } from '@/utils/trilateration';
 
@@ -11,6 +11,7 @@ interface Beacon {
   x: number;
   y: number;
   name: string;
+  deviceName: string; // Add device name for matching
 }
 
 interface Position {
@@ -21,7 +22,7 @@ interface Position {
 export const useBLEScanner = (
   beacons: Beacon[],
   kalmanFilters: { [key: number]: KalmanFilter },
-  uuid: string,
+  uuid: string, // Keep for backward compatibility but won't be used
   txPower: number
 ) => {
   const [isScanning, setIsScanning] = useState(false);
@@ -101,11 +102,11 @@ export const useBLEScanner = (
       const platform = Capacitor.getPlatform();
       const isNative = Capacitor.isNativePlatform();
       
-      console.log('=== BEACON TRACKING BLE INITIALIZATION ===');
+      console.log('=== BEACON TRACKING BLE INITIALIZATION (NAME-BASED) ===');
       console.log('🔍 Platform:', platform);
       console.log('🔍 Is Native:', isNative);
-      console.log('🔍 Expected beacon IDs:', beacons.map(b => `${b.id} (${b.name})`));
-      console.log('🔍 Target UUID:', uuid);
+      console.log('🔍 Expected beacon names:', beacons.map(b => `${b.deviceName} (ID: ${b.id}, Position: ${b.x},${b.y})`));
+      console.log('🔍 Note: Now matching by device names instead of UUID');
       
       setIsNativePlatform(isNative);
       
@@ -118,13 +119,13 @@ export const useBLEScanner = (
             return;
           }
 
-          console.log('✅ BLE Client initialized for beacon tracking');
+          console.log('✅ BLE Client initialized for name-based beacon tracking');
           setBleInitialized(true);
           
           const bluetoothOk = await checkBluetoothState();
           if (bluetoothOk) {
             setBleError(null);
-            setScanStatus('BLE ready for beacon tracking');
+            setScanStatus('BLE ready for name-based beacon tracking');
           }
         } catch (error) {
           console.error('❌ BLE initialization failed:', error);
@@ -140,46 +141,45 @@ export const useBLEScanner = (
     };
     
     initializeBLE();
-  }, [beacons, uuid]);
+  }, [beacons]);
 
-  // Process beacon data from scan results
-  const processBeaconData = useCallback((beaconInfo: BeaconInfo) => {
-    console.log('🎯 PROCESSING BEACON DATA:', beaconInfo);
+  // Process beacon data from scan results (name-based matching)
+  const processBeaconByName = useCallback((deviceName: string, rssi: number, txPowerFromDevice?: number) => {
+    console.log('🎯 PROCESSING BEACON BY NAME:', { deviceName, rssi, txPowerFromDevice });
     
-    const beacon = beacons.find(b => b.id === beaconInfo.major);
+    const beacon = beacons.find(b => b.deviceName === deviceName);
     if (!beacon) {
-      console.log('⚠️ Unknown beacon major:', beaconInfo.major);
-      console.log('📝 Expected majors:', beacons.map(b => `${b.id} (${b.name})`));
+      console.log('⚠️ Unknown beacon name:', deviceName);
+      console.log('📝 Expected names:', beacons.map(b => `${b.deviceName} (ID: ${b.id})`));
       return;
     }
 
-    console.log('✅ BEACON FOUND & MATCHED:', {
-      name: beacon.name,
-      major: beaconInfo.major,
-      minor: beaconInfo.minor,
-      rssi: beaconInfo.rssi,
-      uuid: beaconInfo.uuid,
+    console.log('✅ BEACON FOUND & MATCHED BY NAME:', {
+      displayName: beacon.name,
+      deviceName: beacon.deviceName,
+      id: beacon.id,
+      rssi: rssi,
       position: `(${beacon.x}, ${beacon.y})`
     });
 
     // Apply Kalman filter
-    let filteredRSSI = beaconInfo.rssi;
+    let filteredRSSI = rssi;
     if (kalmanFilters[beacon.id]) {
-      filteredRSSI = kalmanFilters[beacon.id].filter(beaconInfo.rssi);
-      console.log('📊 Kalman filter applied:', beaconInfo.rssi, '→', filteredRSSI);
+      filteredRSSI = kalmanFilters[beacon.id].filter(rssi);
+      console.log('📊 Kalman filter applied:', rssi, '→', filteredRSSI);
     }
 
-    const calculatedDistance = rssiToDistance(filteredRSSI, beaconInfo.txPower || txPower);
+    const calculatedDistance = rssiToDistance(filteredRSSI, txPowerFromDevice || txPower);
     console.log('📏 Distance calculated:', calculatedDistance, 'meters');
     
     // Update beacon data state
     setBeaconData(prev => {
       const newBeacon: BeaconData = {
         id: beacon.id,
-        uuid: beaconInfo.uuid,
-        major: beaconInfo.major,
-        minor: beaconInfo.minor,
-        rssi: Math.round(beaconInfo.rssi),
+        uuid: 'name-based', // Placeholder since we're not using UUID
+        major: beacon.id,
+        minor: 0,
+        rssi: Math.round(rssi),
         filteredRSSI: Math.round(filteredRSSI * 10) / 10,
         distance: Math.round(calculatedDistance * 100) / 100,
         actualDistance: calculatedDistance,
@@ -196,50 +196,7 @@ export const useBLEScanner = (
     });
   }, [beacons, kalmanFilters, txPower]);
 
-  // Helper function to safely convert manufacturer data to ArrayBuffer
-  const convertToArrayBuffer = (data: any): ArrayBuffer | null => {
-    try {
-      console.log('🔄 Converting data to ArrayBuffer:', typeof data, data);
-      
-      if (data instanceof ArrayBuffer) {
-        console.log('✅ Already ArrayBuffer, length:', data.byteLength);
-        return data;
-      }
-      
-      if (data instanceof DataView) {
-        console.log('✅ DataView detected, converting...');
-        return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-      }
-      
-      if (data && typeof data === 'object' && 'buffer' in data && 'byteOffset' in data && 'byteLength' in data) {
-        console.log('✅ Typed array detected, converting...');
-        const typedArray = data as any;
-        return typedArray.buffer.slice(typedArray.byteOffset, typedArray.byteOffset + typedArray.byteLength);
-      }
-      
-      if (Array.isArray(data)) {
-        console.log('✅ Array detected, converting to Uint8Array...');
-        return new Uint8Array(data).buffer;
-      }
-      
-      if (data && typeof data === 'object') {
-        const keys = Object.keys(data).filter(k => !isNaN(Number(k))).sort((a, b) => Number(a) - Number(b));
-        if (keys.length > 0) {
-          console.log('✅ Object with numeric keys detected, converting...');
-          const bytes = keys.map(k => data[k]);
-          return new Uint8Array(bytes).buffer;
-        }
-      }
-      
-      console.log('❌ Cannot convert to ArrayBuffer');
-      return null;
-    } catch (error) {
-      console.error('❌ Error converting to ArrayBuffer:', error);
-      return null;
-    }
-  };
-
-  // Enhanced BLE scanning with detailed logging
+  // Enhanced BLE scanning with name-based matching
   const scanForBeacons = async () => {
     if (!isNativePlatform || !bleInitialized) {
       const errorMsg = !isNativePlatform ? 
@@ -253,10 +210,9 @@ export const useBLEScanner = (
 
     try {
       console.log('🚀 ===========================================');
-      console.log('🚀 STARTING BEACON TRACKING SCAN');
+      console.log('🚀 STARTING NAME-BASED BEACON TRACKING SCAN');
       console.log('🚀 ===========================================');
-      console.log('🎯 Target UUID:', uuid);
-      console.log('🎯 Looking for majors:', beacons.map(b => `${b.id} (${b.name})`));
+      console.log('🎯 Looking for device names:', beacons.map(b => b.deviceName));
       console.log('🎯 TX Power:', txPower);
       
       // Check Bluetooth state
@@ -274,10 +230,10 @@ export const useBLEScanner = (
       }
 
       setBleError(null);
-      setScanStatus('Beacon tracking scan active...');
+      setScanStatus('Name-based beacon tracking scan active...');
       setDevicesFound(0);
       
-      console.log('📡 Starting BLE scan for beacon tracking...');
+      console.log('📡 Starting BLE scan for name-based beacon tracking...');
       
       // Start scanning with optimized settings
       await BleClient.requestLEScan({
@@ -287,103 +243,44 @@ export const useBLEScanner = (
       }, (result: ScanResult) => {
         setDevicesFound(prev => prev + 1);
         
-        const deviceName = result.device?.name || 'Unknown';
+        const deviceName = result.device?.name || result.localName || 'Unknown';
         const deviceId = result.device?.deviceId || 'unknown';
         
-        console.log('📱 BLE Device Found in Beacon Scan:', {
+        console.log('📱 BLE Device Found in Name-Based Beacon Scan:', {
           deviceId: deviceId.slice(0, 12) + '...',
-          name: deviceName,
+          deviceName: deviceName,
+          localName: result.localName,
           rssi: result.rssi,
-          txPower: result.txPower,
-          hasManufacturerData: !!result.manufacturerData,
-          serviceUuids: result.uuids || []
+          txPower: result.txPower
         });
 
-        // Check if this device might be one of our beacons
-        const isPotentialBeacon = deviceName.includes('POI') || 
-                                 deviceName.includes('ESP32') || 
-                                 deviceName.includes('Beacon') ||
-                                 result.manufacturerData;
+        // Check if this device name matches any of our expected beacon names
+        const targetNames = beacons.map(b => b.deviceName);
+        const isTargetBeacon = targetNames.includes(deviceName) || 
+                              (result.localName && targetNames.includes(result.localName));
 
-        if (isPotentialBeacon) {
-          console.log('🔍 POTENTIAL BEACON DETECTED:', deviceName);
-        }
-
-        // Process manufacturer data
-        if (result.manufacturerData) {
-          console.log('🏭 Manufacturer data found, processing...');
-          
-          const manufacturerKeys = Object.keys(result.manufacturerData);
-          console.log('🔑 Manufacturer keys:', manufacturerKeys);
-          
-          manufacturerKeys.forEach(key => {
-            const data = result.manufacturerData![key];
-            console.log(`🔍 Processing manufacturer ${key}:`, data);
-            
-            const arrayBuffer = convertToArrayBuffer(data);
-            
-            if (arrayBuffer && arrayBuffer.byteLength >= 25) {
-              console.log(`✅ Valid data length (${arrayBuffer.byteLength} bytes), parsing as iBeacon...`);
-              const beaconInfo = parseIBeaconData(arrayBuffer, result.rssi || -100);
-              
-              if (beaconInfo) {
-                console.log('🎯 PARSED IBEACON:', beaconInfo);
-                
-                // UUID matching with flexible comparison
-                const cleanTargetUuid = uuid.toLowerCase().replace(/-/g, '');
-                const cleanBeaconUuid = beaconInfo.uuid.toLowerCase().replace(/-/g, '');
-                
-                console.log('🔍 UUID Comparison:');
-                console.log('   Target: ', cleanTargetUuid);
-                console.log('   Beacon: ', cleanBeaconUuid);
-                console.log('   Match:  ', cleanBeaconUuid === cleanTargetUuid);
-                
-                if (cleanBeaconUuid === cleanTargetUuid) {
-                  console.log('🎉 UUID MATCH! This is our beacon!');
-                  console.log('🎉 Beacon details:', {
-                    major: beaconInfo.major,
-                    minor: beaconInfo.minor,
-                    rssi: beaconInfo.rssi,
-                    txPower: beaconInfo.txPower
-                  });
-                  setScanStatus(`Found beacon ${beaconInfo.major}!`);
-                  processBeaconData(beaconInfo);
-                } else {
-                  console.log('❌ UUID mismatch - not our beacon');
-                  console.log('💡 If this should be our beacon, check the UUID configuration');
-                }
-              } else {
-                console.log('❌ Failed to parse as iBeacon format');
-              }
-            } else {
-              const length = arrayBuffer ? arrayBuffer.byteLength : 0;
-              console.log(`❌ Insufficient data length: ${length} bytes (need 25+)`);
-            }
-          });
+        if (isTargetBeacon) {
+          const matchedName = targetNames.includes(deviceName) ? deviceName : result.localName!;
+          console.log('🎯 TARGET BEACON FOUND BY NAME:', matchedName);
+          setScanStatus(`Found beacon: ${matchedName}!`);
+          processBeaconByName(matchedName, result.rssi || -100, result.txPower);
         } else {
-          console.log('📱 No manufacturer data - not an iBeacon');
-        }
-
-        // Also check service UUIDs
-        if (result.uuids && result.uuids.length > 0) {
-          console.log('🔧 Service UUIDs found:', result.uuids);
-          result.uuids.forEach(serviceUuid => {
-            const cleanServiceUuid = serviceUuid.toLowerCase().replace(/-/g, '');
-            const cleanTargetUuid = uuid.toLowerCase().replace(/-/g, '');
-            if (cleanServiceUuid.includes(cleanTargetUuid.slice(0, 8)) || 
-                cleanTargetUuid.includes(cleanServiceUuid.slice(0, 8))) {
-              console.log('🎯 Service UUID might match our beacon UUID!');
-              setScanStatus(`Service UUID match found`);
-            }
-          });
+          // Log non-matching devices for debugging
+          if (deviceName.includes('POI') || deviceName.includes('ESP32') || deviceName.includes('Beacon')) {
+            console.log('🤔 POI-like device found but name doesn\'t match exactly:', {
+              deviceName,
+              localName: result.localName,
+              expectedNames: targetNames
+            });
+          }
         }
       });
 
-      console.log('✅ Beacon tracking BLE scan started successfully');
-      setScanStatus('Scanning for beacons...');
+      console.log('✅ Name-based beacon tracking BLE scan started successfully');
+      setScanStatus('Scanning for named beacons...');
       
     } catch (error) {
-      console.error('❌ Beacon tracking BLE scanning error:', error);
+      console.error('❌ Name-based beacon tracking BLE scanning error:', error);
       setBleError(`Scan failed: ${error}`);
       setScanStatus(`Scan error: ${error}`);
       setIsScanning(false);
@@ -397,7 +294,7 @@ export const useBLEScanner = (
       return;
     }
 
-    console.log('📍 Position calculation attempt with', beaconData.length, 'beacons');
+    console.log('📍 Position calculation attempt with', beaconData.length, 'named beacons');
     
     if (beaconData.length >= 3) {
       const distances: { [key: number]: number } = {};
@@ -410,8 +307,8 @@ export const useBLEScanner = (
       setCurrentPosition(newPosition);
       setPositionHistory(prev => [...prev.slice(-50), newPosition]);
       
-      console.log('✅ Position calculated:', `(${newPosition.x.toFixed(2)}, ${newPosition.y.toFixed(2)})`, 'from', beaconData.length, 'beacons');
-      setScanStatus(`Position from ${beaconData.length} beacons`);
+      console.log('✅ Position calculated:', `(${newPosition.x.toFixed(2)}, ${newPosition.y.toFixed(2)})`, 'from', beaconData.length, 'named beacons');
+      setScanStatus(`Position from ${beaconData.length} named beacons`);
     } else {
       console.log('⚠️ Need at least 3 beacons for position calculation (have', beaconData.length, ')');
       setScanStatus(`Need 3+ beacons (have ${beaconData.length})`);
@@ -421,7 +318,7 @@ export const useBLEScanner = (
   // Start/stop scanning effect
   useEffect(() => {
     if (isScanning) {
-      console.log('🟢 Starting beacon tracking scan...');
+      console.log('🟢 Starting name-based beacon tracking scan...');
       if (isNativePlatform && bleInitialized) {
         scanForBeacons();
         intervalRef.current = setInterval(() => {
@@ -434,7 +331,7 @@ export const useBLEScanner = (
         setScanStatus('Cannot scan - platform/init issue');
       }
     } else {
-      console.log('🔴 Stopping beacon tracking scan...');
+      console.log('🔴 Stopping name-based beacon tracking scan...');
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
@@ -487,7 +384,7 @@ export const useBLEScanner = (
   };
 
   const resetScanning = () => {
-    console.log('🔄 Resetting beacon scanner...');
+    console.log('🔄 Resetting name-based beacon scanner...');
     setIsScanning(false);
     setCurrentPosition({ x: 2.5, y: 2.5 });
     setBeaconData([]);
@@ -495,7 +392,7 @@ export const useBLEScanner = (
     setBleError(null);
     setScanStatus('Reset complete');
     setDevicesFound(0);
-    console.log('✅ Beacon scanner reset complete');
+    console.log('✅ Name-based beacon scanner reset complete');
   };
 
   return {

@@ -6,18 +6,19 @@ import { Badge } from '@/components/ui/badge';
 import { MapPin, Activity, Wifi, Signal } from 'lucide-react';
 import { BleClient, ScanResult, ScanMode } from '@capacitor-community/bluetooth-le';
 import { Capacitor } from '@capacitor/core';
-import { parseIBeaconData, rssiToDistance } from '@/utils/beaconUtils';
+import { rssiToDistance } from '@/utils/beaconUtils';
 
 interface Beacon {
   id: number;
   x: number;
   y: number;
   name: string;
+  deviceName: string; // Add device name for matching
 }
 
 interface IndividualBeaconScannerProps {
   beacon: Beacon;
-  uuid: string;
+  uuid: string; // Keep for backward compatibility
   txPower: number;
   isNativePlatform: boolean;
 }
@@ -47,68 +48,37 @@ const IndividualBeaconScanner: React.FC<IndividualBeaconScannerProps> = ({
       setScanError(null);
       setBeaconFound(false);
       
-      console.log(`🎯 Starting individual scan for POI ${beacon.id} (${beacon.name})`);
+      console.log(`🎯 Starting individual name-based scan for ${beacon.deviceName} (${beacon.name})`);
       
       await BleClient.requestLEScan({
         services: [],
         allowDuplicates: true,
         scanMode: ScanMode.SCAN_MODE_LOW_LATENCY
       }, (result: ScanResult) => {
-        console.log(`📡 POI ${beacon.id} - Device found:`, result.device?.name || 'Unknown');
+        const deviceName = result.device?.name || result.localName || 'Unknown';
+        console.log(`📡 ${beacon.deviceName} - Device found:`, deviceName);
         
-        if (result.manufacturerData) {
-          Object.entries(result.manufacturerData).forEach(([key, data]) => {
-            console.log(`🔍 POI ${beacon.id} - Checking manufacturer ${key}:`, data);
-            
-            try {
-              // Convert data to ArrayBuffer
-              let arrayBuffer: ArrayBuffer | null = null;
-              
-              if (data instanceof ArrayBuffer) {
-                arrayBuffer = data;
-              } else if (Array.isArray(data)) {
-                arrayBuffer = new Uint8Array(data).buffer;
-              } else if (data && typeof data === 'object') {
-                const keys = Object.keys(data).filter(k => !isNaN(Number(k))).sort((a, b) => Number(a) - Number(b));
-                if (keys.length > 0) {
-                  const bytes = keys.map(k => (data as any)[k]);
-                  arrayBuffer = new Uint8Array(bytes).buffer;
-                }
-              }
-              
-              if (arrayBuffer && arrayBuffer.byteLength >= 25) {
-                const beaconInfo = parseIBeaconData(arrayBuffer, result.rssi || -100);
-                
-                if (beaconInfo) {
-                  console.log(`📍 POI ${beacon.id} - Parsed beacon:`, beaconInfo);
-                  
-                  // Check if this is our target beacon
-                  if (beaconInfo.major === beacon.id) {
-                    console.log(`🎯 FOUND POI ${beacon.id}!`);
-                    setBeaconFound(true);
-                    setRssi(beaconInfo.rssi);
-                    setDistance(rssiToDistance(beaconInfo.rssi, txPower));
-                    setLastSeen(new Date().toLocaleTimeString());
-                    setRawData({
-                      uuid: beaconInfo.uuid,
-                      major: beaconInfo.major,
-                      minor: beaconInfo.minor,
-                      txPower: beaconInfo.txPower,
-                      manufacturerKey: key,
-                      rawBytes: Array.from(new Uint8Array(arrayBuffer)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ')
-                    });
-                  }
-                }
-              }
-            } catch (error) {
-              console.log(`❌ POI ${beacon.id} - Parse error:`, error);
-            }
+        // Check if this device name matches our target beacon name
+        if (deviceName === beacon.deviceName || result.localName === beacon.deviceName) {
+          console.log(`🎯 FOUND ${beacon.deviceName}!`);
+          setBeaconFound(true);
+          setRssi(result.rssi || -100);
+          setDistance(rssiToDistance(result.rssi || -100, txPower));
+          setLastSeen(new Date().toLocaleTimeString());
+          setRawData({
+            deviceName: deviceName,
+            localName: result.localName,
+            deviceId: result.device?.deviceId,
+            rssi: result.rssi,
+            txPower: result.txPower,
+            manufacturerData: result.manufacturerData ? Object.keys(result.manufacturerData) : [],
+            serviceUuids: result.uuids || []
           });
         }
       });
       
     } catch (error) {
-      console.error(`❌ POI ${beacon.id} scan error:`, error);
+      console.error(`❌ ${beacon.deviceName} scan error:`, error);
       setScanError(`Scan failed: ${error}`);
       setIsScanning(false);
     }
@@ -118,7 +88,7 @@ const IndividualBeaconScanner: React.FC<IndividualBeaconScannerProps> = ({
     try {
       await BleClient.stopLEScan();
       setIsScanning(false);
-      console.log(`🛑 POI ${beacon.id} scan stopped`);
+      console.log(`🛑 ${beacon.deviceName} scan stopped`);
     } catch (error) {
       console.error('Error stopping scan:', error);
     }
@@ -138,7 +108,7 @@ const IndividualBeaconScanner: React.FC<IndividualBeaconScannerProps> = ({
           <MapPin className="h-4 w-4 text-blue-400" />
           <span className="font-semibold text-white">{beacon.name}</span>
           <Badge variant="outline" className="text-xs">
-            Major: {beacon.id}
+            Device: {beacon.deviceName}
           </Badge>
         </div>
         {beaconFound && (
@@ -197,7 +167,7 @@ const IndividualBeaconScanner: React.FC<IndividualBeaconScannerProps> = ({
           ) : (
             <>
               <Wifi className="w-4 h-4 mr-2" />
-              Scan POI {beacon.id}
+              Scan {beacon.deviceName}
             </>
           )}
         </Button>
@@ -215,14 +185,15 @@ const IndividualBeaconScanner: React.FC<IndividualBeaconScannerProps> = ({
 
       {rawData && (
         <div className="mt-3 pt-3 border-t border-slate-600">
-          <p className="text-gray-400 text-xs mb-2">Beacon Details:</p>
+          <p className="text-gray-400 text-xs mb-2">Device Details:</p>
           <div className="space-y-1 text-xs">
-            <div><span className="text-gray-400">UUID:</span> <span className="text-white font-mono">{rawData.uuid}</span></div>
-            <div><span className="text-gray-400">Major:</span> <span className="text-white font-mono">{rawData.major}</span></div>
-            <div><span className="text-gray-400">Minor:</span> <span className="text-white font-mono">{rawData.minor}</span></div>
-            <div><span className="text-gray-400">TX Power:</span> <span className="text-white font-mono">{rawData.txPower} dBm</span></div>
-            <div><span className="text-gray-400">Mfg Key:</span> <span className="text-white font-mono">{rawData.manufacturerKey}</span></div>
-            <div><span className="text-gray-400">Raw:</span> <span className="text-white font-mono text-xs break-all">{rawData.rawBytes}</span></div>
+            <div><span className="text-gray-400">Device Name:</span> <span className="text-white font-mono">{rawData.deviceName}</span></div>
+            <div><span className="text-gray-400">Local Name:</span> <span className="text-white font-mono">{rawData.localName || 'N/A'}</span></div>
+            <div><span className="text-gray-400">Device ID:</span> <span className="text-white font-mono">{rawData.deviceId?.slice(0, 12)}...</span></div>
+            <div><span className="text-gray-400">RSSI:</span> <span className="text-white font-mono">{rawData.rssi} dBm</span></div>
+            <div><span className="text-gray-400">TX Power:</span> <span className="text-white font-mono">{rawData.txPower || 'N/A'} dBm</span></div>
+            <div><span className="text-gray-400">Mfg Data:</span> <span className="text-white font-mono">{rawData.manufacturerData.length > 0 ? 'Yes' : 'No'}</span></div>
+            <div><span className="text-gray-400">Services:</span> <span className="text-white font-mono">{rawData.serviceUuids.length || 0}</span></div>
           </div>
         </div>
       )}
