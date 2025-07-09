@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -30,6 +31,7 @@ const Index = () => {
     { id: 1005, x: 2.5, y: 2.5, name: "Center" }
   ];
 
+  // CORRECTED UUID based on NRF Connect screenshots
   const uuid = "ab907856-3412-3412-3412-341278563412";
   const txPower = -59;
 
@@ -40,6 +42,10 @@ const Index = () => {
       isNative: Capacitor.isNativePlatform(),
       userAgent: navigator.userAgent
     });
+    console.log('🎯 CORRECTED BEACON CONFIGURATION:');
+    console.log('🎯 UUID (corrected):', uuid);
+    console.log('🎯 Expected from NRF:', 'AB90 7856-3412 3412-3412 3412-7856 3412');
+    console.log('🎯 Manufacturer data format should be: AB90 7856 3412 3412 3412 3412 7856 3412');
     console.log('Platform Info:', {
       platform: Capacitor.getPlatform(),
       isNative: Capacitor.isNativePlatform(),

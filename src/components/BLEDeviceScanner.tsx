@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Wifi, WifiOff, Bluetooth, Activity } from 'lucide-react';
+import { Wifi, WifiOff, Bluetooth, Activity, Info } from 'lucide-react';
 import { BleClient, ScanResult, ScanMode } from '@capacitor-community/bluetooth-le';
 import { Capacitor } from '@capacitor/core';
 
@@ -16,6 +15,12 @@ interface ScannedDevice {
   serviceUuids?: string[];
   timestamp: number;
   lastUpdate: number;
+  // New fields for detailed device information
+  deviceDetails?: {
+    connectable?: boolean;
+    localName?: string;
+    serviceData?: { [key: string]: any };
+  };
 }
 
 const BLEDeviceScanner: React.FC = () => {
@@ -57,7 +62,9 @@ const BLEDeviceScanner: React.FC = () => {
     }
 
     try {
-      console.log('=== Starting Enhanced BLE Device Scan ===');
+      console.log('🚀 ===========================================');
+      console.log('🚀 STARTING ENHANCED BLE DEVICE SCAN');
+      console.log('🚀 ===========================================');
       
       // Initialize BLE
       await BleClient.initialize();
@@ -85,15 +92,19 @@ const BLEDeviceScanner: React.FC = () => {
         setTotalScans(prev => prev + 1);
         
         const deviceId = result.device?.deviceId || 'unknown';
-        const deviceName = result.device?.name || 'Unknown Device';
+        const deviceName = result.device?.name || result.localName || 'Unknown Device';
         
-        console.log('📱 BLE Device Update:', {
+        console.log('📱 BLE Device Update (Enhanced):', {
           deviceId,
           name: deviceName,
           rssi: result.rssi,
-          txPower: result.txPower
+          txPower: result.txPower,
+          hasManufacturerData: !!result.manufacturerData,
+          serviceUuids: result.uuids || [],
+          connectable: result.device?.connectable
         });
 
+        // Enhanced device object with more details
         const newDevice: ScannedDevice = {
           deviceId,
           name: deviceName,
@@ -102,8 +113,82 @@ const BLEDeviceScanner: React.FC = () => {
           manufacturerData: result.manufacturerData,
           serviceUuids: result.uuids,
           timestamp: Date.now(),
-          lastUpdate: Date.now()
+          lastUpdate: Date.now(),
+          deviceDetails: {
+            connectable: result.device?.connectable,
+            localName: result.localName,
+            serviceData: result.serviceData
+          }
         };
+
+        // Process manufacturer data to extract potential UUIDs and beacon info
+        if (result.manufacturerData) {
+          console.log('🔍 Processing manufacturer data for device:', deviceName);
+          Object.entries(result.manufacturerData).forEach(([key, data]) => {
+            console.log(`   Manufacturer ${key}:`, data);
+            
+            // Try to extract UUID if this looks like beacon data
+            try {
+              let arrayBuffer: ArrayBuffer | null = null;
+              
+              if (data instanceof ArrayBuffer) {
+                arrayBuffer = data;
+              } else if (Array.isArray(data)) {
+                arrayBuffer = new Uint8Array(data).buffer;
+              } else if (data && typeof data === 'object') {
+                const keys = Object.keys(data).filter(k => !isNaN(Number(k))).sort((a, b) => Number(a) - Number(b));
+                if (keys.length > 0) {
+                  const bytes = keys.map(k => (data as any)[k]);
+                  arrayBuffer = new Uint8Array(bytes).buffer;
+                }
+              }
+              
+              if (arrayBuffer && arrayBuffer.byteLength >= 16) {
+                const dataView = new DataView(arrayBuffer);
+                
+                // Try to extract UUID from various positions
+                for (let offset = 0; offset <= arrayBuffer.byteLength - 16; offset++) {
+                  const uuidBytes = [];
+                  for (let i = offset; i < offset + 16; i++) {
+                    uuidBytes.push(dataView.getUint8(i).toString(16).padStart(2, '0'));
+                  }
+                  
+                  const extractedUuid = [
+                    uuidBytes.slice(0, 4).join(''),
+                    uuidBytes.slice(4, 6).join(''),
+                    uuidBytes.slice(6, 8).join(''),
+                    uuidBytes.slice(8, 10).join(''),
+                    uuidBytes.slice(10, 16).join('')
+                  ].join('-');
+                  
+                  // Check if this looks like a valid UUID (not all zeros/FFs)
+                  const cleanUuid = extractedUuid.replace(/-/g, '');
+                  if (cleanUuid !== '00000000000000000000000000000000' && 
+                      cleanUuid !== 'ffffffffffffffffffffffffffffffff' &&
+                      cleanUuid.length === 32) {
+                    
+                    console.log(`   🎯 Potential UUID at offset ${offset}:`, extractedUuid);
+                    
+                    // Add UUID to device details
+                    if (!newDevice.deviceDetails) newDevice.deviceDetails = {};
+                    if (!newDevice.deviceDetails.serviceData) newDevice.deviceDetails.serviceData = {};
+                    newDevice.deviceDetails.serviceData[`extracted_uuid_${offset}`] = extractedUuid;
+                    
+                    // Check for AB90 pattern (our target beacons)
+                    if (cleanUuid.toLowerCase().startsWith('ab907856')) {
+                      console.log(`   🎯 FOUND TARGET BEACON UUID PATTERN!`);
+                      newDevice.deviceDetails.serviceData['beacon_type'] = 'TARGET_BEACON';
+                    }
+                    
+                    break; // Found a valid UUID, stop searching
+                  }
+                }
+              }
+            } catch (error) {
+              console.log(`   ❌ Error processing manufacturer data:`, error);
+            }
+          });
+        }
 
         setDevices(prev => {
           const updated = new Map(prev);
@@ -112,7 +197,7 @@ const BLEDeviceScanner: React.FC = () => {
         });
       });
 
-      console.log('✅ Enhanced BLE scan started successfully');
+      console.log('✅ Enhanced BLE device scan started successfully');
       
     } catch (error) {
       console.error('❌ Enhanced BLE scanning error:', error);
@@ -236,7 +321,7 @@ const BLEDeviceScanner: React.FC = () => {
         </div>
       )}
 
-      {/* Device List */}
+      {/* Enhanced Device List */}
       <div className="space-y-3 max-h-96 overflow-y-auto">
         {devicesArray.length === 0 && !isScanning ? (
           <div className="text-center py-8">
@@ -248,6 +333,10 @@ const BLEDeviceScanner: React.FC = () => {
           devicesArray.map(device => {
             const signal = getSignalStrength(device.rssi);
             const age = getDeviceAge(device.lastUpdate);
+            const hasExtractedUuid = device.deviceDetails?.serviceData && 
+              Object.keys(device.deviceDetails.serviceData).some(key => key.startsWith('extracted_uuid_'));
+            const isTargetBeacon = device.deviceDetails?.serviceData?.beacon_type === 'TARGET_BEACON';
+            
             return (
               <Card key={device.deviceId} className="bg-slate-700/50 border-slate-600 p-4">
                 <div className="flex items-center justify-between mb-3">
@@ -259,9 +348,24 @@ const BLEDeviceScanner: React.FC = () => {
                         MFG Data
                       </Badge>
                     )}
+                    {hasExtractedUuid && (
+                      <Badge variant="outline" className="text-xs text-purple-200 border-purple-300">
+                        UUID
+                      </Badge>
+                    )}
+                    {isTargetBeacon && (
+                      <Badge variant="outline" className="text-xs text-red-200 border-red-300">
+                        TARGET BEACON!
+                      </Badge>
+                    )}
                     {age <= 3 && (
                       <Badge variant="outline" className="text-xs text-blue-200 border-blue-300">
                         LIVE
+                      </Badge>
+                    )}
+                    {device.deviceDetails?.connectable && (
+                      <Badge variant="outline" className="text-xs text-yellow-200 border-yellow-300">
+                        Connectable
                       </Badge>
                     )}
                   </div>
@@ -291,14 +395,39 @@ const BLEDeviceScanner: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Enhanced Device Details */}
+                {device.deviceDetails?.localName && device.deviceDetails.localName !== device.name && (
+                  <div className="mt-3 pt-3 border-t border-slate-600">
+                    <p className="text-gray-400 text-xs mb-1">Local Name:</p>
+                    <p className="text-white text-sm">{device.deviceDetails.localName}</p>
+                  </div>
+                )}
+
+                {/* Extracted UUIDs */}
+                {hasExtractedUuid && (
+                  <div className="mt-3 pt-3 border-t border-slate-600">
+                    <p className="text-gray-400 text-xs mb-2">Extracted UUIDs:</p>
+                    <div className="space-y-1">
+                      {Object.entries(device.deviceDetails?.serviceData || {})
+                        .filter(([key]) => key.startsWith('extracted_uuid_'))
+                        .map(([key, uuid]) => (
+                          <div key={key} className="text-xs">
+                            <span className="text-gray-400">{key.replace('extracted_uuid_', 'Offset ')}:</span>
+                            <span className="text-white font-mono ml-2 break-all">{uuid as string}</span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Service UUIDs */}
                 {device.serviceUuids && device.serviceUuids.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-slate-600">
                     <p className="text-gray-400 text-xs mb-2">Service UUIDs:</p>
                     <div className="flex flex-wrap gap-1">
                       {device.serviceUuids.map((uuid, index) => (
-                        <Badge key={index} variant="outline" className="text-xs">
-                          {uuid.slice(0, 8)}...
+                        <Badge key={index} variant="outline" className="text-xs font-mono">
+                          {uuid.length > 8 ? `${uuid.slice(0, 8)}...` : uuid}
                         </Badge>
                       ))}
                     </div>
@@ -312,8 +441,8 @@ const BLEDeviceScanner: React.FC = () => {
                     <div className="space-y-1">
                       {Object.entries(device.manufacturerData!).map(([key, value]) => (
                         <div key={key} className="text-xs">
-                          <span className="text-gray-400">0x{key}:</span>
-                          <span className="text-white font-mono ml-2">
+                          <span className="text-gray-400">Company 0x{key}:</span>
+                          <span className="text-white font-mono ml-2 break-all">
                             {typeof value === 'object' ? JSON.stringify(value) : String(value)}
                           </span>
                         </div>
