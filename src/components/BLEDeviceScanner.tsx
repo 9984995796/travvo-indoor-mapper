@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,7 +18,6 @@ interface ScannedDevice {
   lastUpdate: number;
   // New fields for detailed device information
   deviceDetails?: {
-    connectable?: boolean;
     localName?: string;
     serviceData?: { [key: string]: any };
   };
@@ -100,8 +100,7 @@ const BLEDeviceScanner: React.FC = () => {
           rssi: result.rssi,
           txPower: result.txPower,
           hasManufacturerData: !!result.manufacturerData,
-          serviceUuids: result.uuids || [],
-          connectable: result.device?.connectable
+          serviceUuids: result.uuids || []
         });
 
         // Enhanced device object with more details
@@ -115,7 +114,6 @@ const BLEDeviceScanner: React.FC = () => {
           timestamp: Date.now(),
           lastUpdate: Date.now(),
           deviceDetails: {
-            connectable: result.device?.connectable,
             localName: result.localName,
             serviceData: result.serviceData
           }
@@ -361,11 +359,6 @@ const BLEDeviceScanner: React.FC = () => {
                     {age <= 3 && (
                       <Badge variant="outline" className="text-xs text-blue-200 border-blue-300">
                         LIVE
-                      </Badge>
-                    )}
-                    {device.deviceDetails?.connectable && (
-                      <Badge variant="outline" className="text-xs text-yellow-200 border-yellow-300">
-                        Connectable
                       </Badge>
                     )}
                   </div>
