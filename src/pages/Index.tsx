@@ -10,6 +10,7 @@ import BLEDeviceScanner from '@/components/BLEDeviceScanner';
 import { createKalmanFilters } from '@/utils/kalmanFilter';
 import { useBLEScanner } from '@/hooks/useBLEScanner';
 import { Capacitor } from '@capacitor/core';
+import IndividualBeaconScanner from '@/components/IndividualBeaconScanner';
 
 const Index = () => {
   const [simulatedPosition, setSimulatedPosition] = useState({ x: 2.5, y: 2.5 });
@@ -237,28 +238,55 @@ const Index = () => {
                 </div>
               </Card>
 
-              {/* Beacon Data */}
+              {/* Individual Beacon Scanners */}
               <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-sm">
                 <div className="p-6">
-                  <h2 className="text-xl font-semibold text-white mb-4">Real Beacon Scanner</h2>
+                  <h2 className="text-xl font-semibold text-white mb-4">Individual Beacon Scanner</h2>
+                  <p className="text-gray-300 text-sm mb-6">
+                    Scan each POI beacon individually to test connectivity and view detailed information.
+                  </p>
+                  <div className="space-y-4 max-h-96 overflow-y-auto">
+                    {beacons.map(beacon => (
+                      <IndividualBeaconScanner
+                        key={beacon.id}
+                        beacon={beacon}
+                        uuid={uuid}
+                        txPower={txPower}
+                        isNativePlatform={isNativePlatform}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </Card>
+            </div>
+
+            {/* Combined Beacon Data Display */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Original Beacon Data */}
+              <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-sm">
+                <div className="p-6">
+                  <h2 className="text-xl font-semibold text-white mb-4">Combined Beacon Scanner</h2>
+                  <p className="text-gray-300 text-sm mb-4">
+                    This scans for all beacons simultaneously for position calculation.
+                  </p>
                   <BeaconSimulator 
                     beacons={beaconData}
                     isScanning={isScanning && isNativePlatform}
                   />
                 </div>
               </Card>
-            </div>
 
-            {/* Kalman Filter Visualization */}
-            <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-sm">
-              <div className="p-6">
-                <h2 className="text-xl font-semibold text-white mb-4">Real-Time Kalman Filter Analysis</h2>
-                <KalmanFilterDisplay 
-                  beaconData={beaconData}
-                  isScanning={isScanning && isNativePlatform}
-                />
-              </div>
-            </Card>
+              {/* Kalman Filter Visualization */}
+              <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-sm">
+                <div className="p-6">
+                  <h2 className="text-xl font-semibold text-white mb-4">Real-Time Kalman Filter Analysis</h2>
+                  <KalmanFilterDisplay 
+                    beaconData={beaconData}
+                    isScanning={isScanning && isNativePlatform}
+                  />
+                </div>
+              </Card>
+            </div>
           </TabsContent>
 
           {/* BLE Device Scanner Tab */}

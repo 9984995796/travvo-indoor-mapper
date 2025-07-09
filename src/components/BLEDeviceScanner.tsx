@@ -15,19 +15,40 @@ interface ScannedDevice {
   manufacturerData?: { [key: string]: any };
   serviceUuids?: string[];
   timestamp: number;
+  lastUpdate: number;
 }
 
 const BLEDeviceScanner: React.FC = () => {
   const [isScanning, setIsScanning] = useState(false);
-  const [devices, setDevices] = useState<ScannedDevice[]>([]);
+  const [devices, setDevices] = useState<Map<string, ScannedDevice>>(new Map());
   const [scanError, setScanError] = useState<string | null>(null);
   const [isNativePlatform, setIsNativePlatform] = useState(false);
-  const [totalDevicesFound, setTotalDevicesFound] = useState(0);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [totalScans, setTotalScans] = useState(0);
+  const [scanStartTime, setScanStartTime] = useState<number>(0);
+  const updateIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     setIsNativePlatform(Capacitor.isNativePlatform());
   }, []);
+
+  // Auto-update timestamps every second
+  useEffect(() => {
+    if (isScanning) {
+      updateIntervalRef.current = setInterval(() => {
+        setDevices(prev => new Map(prev));
+      }, 1000);
+    } else {
+      if (updateIntervalRef.current) {
+        clearInterval(updateIntervalRef.current);
+      }
+    }
+
+    return () => {
+      if (updateIntervalRef.current) {
+        clearInterval(updateIntervalRef.current);
+      }
+    };
+  }, [isScanning]);
 
   const startGeneralScan = async () => {
     if (!isNativePlatform) {
@@ -36,7 +57,7 @@ const BLEDeviceScanner: React.FC = () => {
     }
 
     try {
-      console.log('=== Starting General BLE Device Scan ===');
+      console.log('=== Starting Enhanced BLE Device Scan ===');
       
       // Initialize BLE
       await BleClient.initialize();
@@ -49,49 +70,52 @@ const BLEDeviceScanner: React.FC = () => {
       }
 
       // Clear previous results
-      setDevices([]);
-      setTotalDevicesFound(0);
+      setDevices(new Map());
+      setTotalScans(0);
       setScanError(null);
       setIsScanning(true);
+      setScanStartTime(Date.now());
 
       // Start scanning for ALL devices
       await BleClient.requestLEScan({
-        services: [], // Empty array means scan for all services
+        services: [],
         allowDuplicates: true,
         scanMode: ScanMode.SCAN_MODE_LOW_LATENCY
       }, (result: ScanResult) => {
-        setTotalDevicesFound(prev => prev + 1);
+        setTotalScans(prev => prev + 1);
         
-        console.log('📱 BLE Device Found:', {
-          deviceId: result.device?.deviceId,
-          name: result.device?.name || 'Unknown',
+        const deviceId = result.device?.deviceId || 'unknown';
+        const deviceName = result.device?.name || 'Unknown Device';
+        
+        console.log('📱 BLE Device Update:', {
+          deviceId,
+          name: deviceName,
           rssi: result.rssi,
-          txPower: result.txPower,
-          hasManufacturerData: !!result.manufacturerData,
-          serviceUuids: result.uuids || []
+          txPower: result.txPower
         });
 
         const newDevice: ScannedDevice = {
-          deviceId: result.device?.deviceId || 'unknown',
-          name: result.device?.name || 'Unknown Device',
+          deviceId,
+          name: deviceName,
           rssi: result.rssi || -100,
           txPower: result.txPower,
           manufacturerData: result.manufacturerData,
           serviceUuids: result.uuids,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          lastUpdate: Date.now()
         };
 
         setDevices(prev => {
-          // Remove old entry for same device and add new one
-          const filtered = prev.filter(d => d.deviceId !== newDevice.deviceId);
-          return [...filtered, newDevice].sort((a, b) => b.rssi - a.rssi);
+          const updated = new Map(prev);
+          updated.set(deviceId, newDevice);
+          return updated;
         });
       });
 
-      console.log('✅ General BLE scan started successfully');
+      console.log('✅ Enhanced BLE scan started successfully');
       
     } catch (error) {
-      console.error('❌ General BLE scanning error:', error);
+      console.error('❌ Enhanced BLE scanning error:', error);
       setScanError(`Scan failed: ${error}`);
       setIsScanning(false);
     }
@@ -118,8 +142,8 @@ const BLEDeviceScanner: React.FC = () => {
   };
 
   const clearResults = () => {
-    setDevices([]);
-    setTotalDevicesFound(0);
+    setDevices(new Map());
+    setTotalScans(0);
     setScanError(null);
   };
 
@@ -133,6 +157,12 @@ const BLEDeviceScanner: React.FC = () => {
   const hasManufacturerData = (device: ScannedDevice) => {
     return device.manufacturerData && Object.keys(device.manufacturerData).length > 0;
   };
+
+  const getDeviceAge = (timestamp: number) => {
+    return Math.round((Date.now() - timestamp) / 1000);
+  };
+
+  const devicesArray = Array.from(devices.values()).sort((a, b) => b.lastUpdate - a.lastUpdate);
 
   if (!isNativePlatform) {
     return (
@@ -173,14 +203,20 @@ const BLEDeviceScanner: React.FC = () => {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-3 gap-4">
         <div className="text-center p-3 bg-slate-700/30 rounded-lg">
-          <p className="text-gray-400 text-sm">Total Scanned</p>
-          <p className="text-white text-2xl font-bold">{totalDevicesFound}</p>
+          <p className="text-gray-400 text-sm">Total Scans</p>
+          <p className="text-white text-2xl font-bold">{totalScans}</p>
         </div>
         <div className="text-center p-3 bg-slate-700/30 rounded-lg">
           <p className="text-gray-400 text-sm">Unique Devices</p>
-          <p className="text-white text-2xl font-bold">{devices.length}</p>
+          <p className="text-white text-2xl font-bold">{devices.size}</p>
+        </div>
+        <div className="text-center p-3 bg-slate-700/30 rounded-lg">
+          <p className="text-gray-400 text-sm">Scan Time</p>
+          <p className="text-white text-2xl font-bold">
+            {isScanning ? Math.round((Date.now() - scanStartTime) / 1000) : 0}s
+          </p>
         </div>
       </div>
 
@@ -196,21 +232,22 @@ const BLEDeviceScanner: React.FC = () => {
       {isScanning && (
         <div className="text-center p-4 bg-blue-900/20 border border-blue-500/30 rounded-lg">
           <Activity className="mx-auto h-6 w-6 text-blue-400 animate-pulse mb-2" />
-          <p className="text-blue-200">Scanning for BLE devices...</p>
+          <p className="text-blue-200">Live scanning for BLE devices...</p>
         </div>
       )}
 
       {/* Device List */}
       <div className="space-y-3 max-h-96 overflow-y-auto">
-        {devices.length === 0 && !isScanning ? (
+        {devicesArray.length === 0 && !isScanning ? (
           <div className="text-center py-8">
             <Wifi className="mx-auto h-12 w-12 text-gray-400 mb-4" />
             <p className="text-gray-400">No devices found</p>
             <p className="text-sm text-gray-500 mt-2">Click "Start Scan" to search for BLE devices</p>
           </div>
         ) : (
-          devices.map(device => {
+          devicesArray.map(device => {
             const signal = getSignalStrength(device.rssi);
+            const age = getDeviceAge(device.lastUpdate);
             return (
               <Card key={device.deviceId} className="bg-slate-700/50 border-slate-600 p-4">
                 <div className="flex items-center justify-between mb-3">
@@ -220,6 +257,11 @@ const BLEDeviceScanner: React.FC = () => {
                     {hasManufacturerData(device) && (
                       <Badge variant="outline" className="text-xs text-green-200 border-green-300">
                         MFG Data
+                      </Badge>
+                    )}
+                    {age <= 3 && (
+                      <Badge variant="outline" className="text-xs text-blue-200 border-blue-300">
+                        LIVE
                       </Badge>
                     )}
                   </div>
@@ -244,10 +286,8 @@ const BLEDeviceScanner: React.FC = () => {
                     </div>
                   )}
                   <div>
-                    <p className="text-gray-400">Age</p>
-                    <p className="text-white font-mono">
-                      {Math.round((Date.now() - device.timestamp) / 1000)}s
-                    </p>
+                    <p className="text-gray-400">Last Update</p>
+                    <p className="text-white font-mono">{age}s ago</p>
                   </div>
                 </div>
 
