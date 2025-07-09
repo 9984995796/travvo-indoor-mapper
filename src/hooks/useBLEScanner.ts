@@ -39,7 +39,6 @@ export const useBLEScanner = (
   // Check if device supports BLE
   const checkBLESupport = async () => {
     try {
-      // Since isAvailable doesn't exist, we'll try to initialize to check support
       await BleClient.initialize();
       console.log('BLE Available: true');
       return true;
@@ -113,7 +112,6 @@ export const useBLEScanner = (
       
       if (isNative) {
         try {
-          // Check BLE support first
           const bleSupported = await checkBLESupport();
           if (!bleSupported) {
             setBleError('BLE not supported on this device');
@@ -124,7 +122,6 @@ export const useBLEScanner = (
           console.log('✅ BLE Client initialized');
           setBleInitialized(true);
           
-          // Check Bluetooth state
           const bluetoothOk = await checkBluetoothState();
           if (bluetoothOk) {
             setBleError(null);
@@ -240,44 +237,76 @@ export const useBLEScanner = (
           serviceUuids: result.uuids || []
         });
 
-        // Log raw manufacturer data for debugging
+        // Enhanced manufacturer data processing
         if (result.manufacturerData) {
           console.log('📊 Raw Manufacturer Data:', result.manufacturerData);
           
-          // Check all possible manufacturer ID formats
           const manufacturerKeys = Object.keys(result.manufacturerData);
           console.log('🔑 Manufacturer Data Keys:', manufacturerKeys);
           
           manufacturerKeys.forEach(key => {
             const data = result.manufacturerData![key];
-            console.log(`🏭 Manufacturer ${key}:`, {
-              type: typeof data,
-              isDataView: data instanceof DataView,
-              isArrayBuffer: data instanceof ArrayBuffer,
-              isArray: Array.isArray(data),
-              raw: data
-            });
+            console.log(`🏭 Manufacturer ${key}:`, data);
             
-            // Try to parse each manufacturer data entry
             try {
-              const arrayBuffer = convertToArrayBuffer(data);
+              // Try different parsing approaches
+              let arrayBuffer: ArrayBuffer | null = null;
+              
+              // Direct ArrayBuffer
+              if (data instanceof ArrayBuffer) {
+                arrayBuffer = data;
+              }
+              // DataView
+              else if (data instanceof DataView) {
+                arrayBuffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+              }
+              // Uint8Array or similar
+              else if (data && typeof data === 'object' && 'buffer' in data) {
+                arrayBuffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+              }
+              // Array of numbers
+              else if (Array.isArray(data)) {
+                arrayBuffer = new Uint8Array(data).buffer;
+              }
+              // Object with numeric keys (common in Capacitor)
+              else if (data && typeof data === 'object') {
+                const keys = Object.keys(data).filter(k => !isNaN(Number(k))).sort((a, b) => Number(a) - Number(b));
+                if (keys.length > 0) {
+                  const bytes = keys.map(k => data[k]);
+                  arrayBuffer = new Uint8Array(bytes).buffer;
+                }
+              }
+              
               if (arrayBuffer && arrayBuffer.byteLength >= 25) {
-                console.log(`🔍 Trying to parse manufacturer ${key} as iBeacon...`);
+                console.log(`🔍 Trying to parse manufacturer ${key} as iBeacon (${arrayBuffer.byteLength} bytes)...`);
                 const beaconInfo = parseIBeaconData(arrayBuffer, result.rssi || -100);
                 
                 if (beaconInfo) {
                   console.log('📍 Parsed iBeacon from manufacturer', key, ':', beaconInfo);
                   
-                  // Check UUID match (case insensitive)
-                  if (beaconInfo.uuid.toLowerCase() === uuid.toLowerCase()) {
+                  // More flexible UUID matching - remove dashes and compare
+                  const cleanTargetUuid = uuid.toLowerCase().replace(/-/g, '');
+                  const cleanBeaconUuid = beaconInfo.uuid.toLowerCase().replace(/-/g, '');
+                  
+                  console.log('🔍 UUID Comparison:', {
+                    target: cleanTargetUuid,
+                    beacon: cleanBeaconUuid,
+                    match: cleanBeaconUuid === cleanTargetUuid
+                  });
+                  
+                  if (cleanBeaconUuid === cleanTargetUuid) {
                     console.log('🎯 UUID MATCH! Processing beacon...');
                     setScanStatus(`Found beacon ${beaconInfo.major}!`);
                     processBeaconData(beaconInfo);
                   } else {
-                    console.log('❌ UUID mismatch:', beaconInfo.uuid, 'vs', uuid);
-                    setScanStatus(`Wrong UUID: ${beaconInfo.uuid.slice(0, 8)}...`);
+                    console.log('❌ UUID mismatch - not our beacon');
+                    setScanStatus(`Different UUID found`);
                   }
+                } else {
+                  console.log('❌ Not a valid iBeacon format');
                 }
+              } else {
+                console.log(`❌ Insufficient data length: ${arrayBuffer ? arrayBuffer.byteLength : 0} bytes (need 25)`);
               }
             } catch (parseError) {
               console.log(`❌ Failed to parse manufacturer ${key}:`, parseError);
@@ -291,8 +320,11 @@ export const useBLEScanner = (
         if (result.uuids && result.uuids.length > 0) {
           console.log('🔧 Service UUIDs found:', result.uuids);
           result.uuids.forEach(serviceUuid => {
-            if (serviceUuid.toLowerCase().includes(uuid.toLowerCase().replace(/-/g, ''))) {
+            const cleanServiceUuid = serviceUuid.toLowerCase().replace(/-/g, '');
+            const cleanTargetUuid = uuid.toLowerCase().replace(/-/g, '');
+            if (cleanServiceUuid.includes(cleanTargetUuid) || cleanTargetUuid.includes(cleanServiceUuid)) {
               console.log('🎯 Service UUID might match our beacon UUID!');
+              setScanStatus(`Service UUID match found`);
             }
           });
         }
@@ -306,57 +338,6 @@ export const useBLEScanner = (
       setBleError(`Scan failed: ${error}`);
       setScanStatus(`Scan error: ${error}`);
       setIsScanning(false);
-    }
-  };
-
-  // Improved helper function to convert various data formats to ArrayBuffer
-  const convertToArrayBuffer = (data: any): ArrayBuffer | null => {
-    try {
-      console.log('🔄 Converting data to ArrayBuffer:', {
-        type: typeof data,
-        constructor: data?.constructor?.name,
-        isDataView: data instanceof DataView,
-        isArrayBuffer: data instanceof ArrayBuffer,
-        isTypedArray: data && typeof data === 'object' && 'buffer' in data,
-        isArray: Array.isArray(data)
-      });
-
-      if (data instanceof ArrayBuffer) {
-        console.log('✅ Already ArrayBuffer, length:', data.byteLength);
-        return data;
-      } 
-      
-      if (data instanceof DataView) {
-        console.log('✅ Converting DataView to ArrayBuffer, length:', data.byteLength);
-        return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-      } 
-      
-      // Handle typed arrays (Uint8Array, etc.)
-      if (data && typeof data === 'object' && 'buffer' in data && 'byteOffset' in data && 'byteLength' in data) {
-        console.log('✅ Converting TypedArray to ArrayBuffer, length:', data.byteLength);
-        return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-      } 
-      
-      if (Array.isArray(data)) {
-        console.log('✅ Converting Array to ArrayBuffer, length:', data.length);
-        return new Uint8Array(data).buffer;
-      }
-      
-      // Try to convert object with numeric properties
-      if (data && typeof data === 'object') {
-        const keys = Object.keys(data).filter(k => !isNaN(Number(k))).sort((a, b) => Number(a) - Number(b));
-        if (keys.length > 0) {
-          console.log('✅ Converting object with numeric keys to ArrayBuffer, keys:', keys.length);
-          const bytes = keys.map(k => data[k]);
-          return new Uint8Array(bytes).buffer;
-        }
-      }
-      
-      console.log('❌ Cannot convert data to ArrayBuffer');
-      return null;
-    } catch (error) {
-      console.error('❌ Error converting to ArrayBuffer:', error);
-      return null;
     }
   };
 
@@ -386,7 +367,7 @@ export const useBLEScanner = (
     if (isScanning) {
       if (isNativePlatform && bleInitialized) {
         scanForBeacons();
-        intervalRef.current = setInterval(calculateFromRealBeacons, 2000); // Every 2 seconds
+        intervalRef.current = setInterval(calculateFromRealBeacons, 2000);
       } else {
         setIsScanning(false);
         setScanStatus('Cannot scan - platform/init issue');
@@ -419,7 +400,6 @@ export const useBLEScanner = (
       return;
     }
 
-    // Check Bluetooth before starting
     if (!isScanning) {
       const bluetoothOk = await checkBluetoothState();
       if (!bluetoothOk) {
