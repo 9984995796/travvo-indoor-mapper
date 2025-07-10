@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { BleClient, ScanResult, ScanMode } from '@capacitor-community/bluetooth-le';
@@ -37,6 +36,7 @@ export const useBLEScanner = (
   const [devicesFound, setDevicesFound] = useState<number>(0);
   const scanIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const positionIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Check if device supports BLE
   const checkBLESupport = async () => {
@@ -103,12 +103,9 @@ export const useBLEScanner = (
       const platform = Capacitor.getPlatform();
       const isNative = Capacitor.isNativePlatform();
       
-      console.log('=== REAL-TIME BEACON TRACKING INITIALIZATION ===');
+      console.log('=== OPTIMIZED BEACON TRACKING INIT ===');
       console.log('🔍 Platform:', platform);
       console.log('🔍 Is Native:', isNative);
-      console.log('🔍 Expected beacon names:', beacons.map(b => `${b.deviceName} (ID: ${b.id}, Position: ${b.x},${b.y})`));
-      console.log('🔍 Update Rate: 1Hz (every 1000ms)');
-      console.log('🔍 TxPower:', txPower, 'dBm');
       
       setIsNativePlatform(isNative);
       
@@ -121,13 +118,13 @@ export const useBLEScanner = (
             return;
           }
 
-          console.log('✅ BLE Client initialized for real-time beacon tracking');
+          console.log('✅ BLE Client initialized for optimized tracking');
           setBleInitialized(true);
           
           const bluetoothOk = await checkBluetoothState();
           if (bluetoothOk) {
             setBleError(null);
-            setScanStatus('BLE ready for real-time tracking');
+            setScanStatus('BLE ready - optimized scanning');
           }
         } catch (error) {
           console.error('❌ BLE initialization failed:', error);
@@ -136,7 +133,6 @@ export const useBLEScanner = (
           setScanStatus(`Init failed: ${error}`);
         }
       } else {
-        console.log('❌ Not running on native platform - beacon tracking disabled');
         setBleError('BLE requires native platform (Android/iOS)');
         setScanStatus('Not native platform');
       }
@@ -145,47 +141,24 @@ export const useBLEScanner = (
     initializeBLE();
   }, [beacons, txPower]);
 
-  // Process beacon data from scan results with IMPROVED filtering and calculations
+  // OPTIMIZED: Process beacon data with reduced logging
   const processBeaconByName = useCallback((deviceName: string, rssi: number, txPowerFromDevice?: number) => {
-    console.log('🎯 ===========================================');
-    console.log('🎯 PROCESSING BEACON WITH LIVE RSSI UPDATE');
-    console.log('🎯 ===========================================');
-    console.log(`📡 Device: ${deviceName}`);
-    console.log(`📊 Raw RSSI: ${rssi} dBm`);
-    console.log(`⚡ TxPower: ${txPowerFromDevice || txPower} dBm`);
-    
     const beacon = beacons.find(b => b.deviceName === deviceName);
     if (!beacon) {
-      console.log('⚠️ Unknown beacon name:', deviceName);
-      console.log('📝 Expected names:', beacons.map(b => `${b.deviceName} (ID: ${b.id})`));
       return;
     }
-
-    console.log('✅ BEACON MATCHED:', {
-      displayName: beacon.name,
-      deviceName: beacon.deviceName,
-      id: beacon.id,
-      position: `(${beacon.x}, ${beacon.y})`
-    });
 
     // Apply Kalman filter for RSSI smoothing
     let filteredRSSI = rssi;
     if (kalmanFilters[beacon.id]) {
-      const rawRSSI = rssi;
       filteredRSSI = kalmanFilters[beacon.id].filter(rssi);
-      console.log('📊 KALMAN FILTER APPLIED:');
-      console.log(`   Raw RSSI: ${rawRSSI} dBm`);
-      console.log(`   Filtered RSSI: ${filteredRSSI.toFixed(1)} dBm`);
-      console.log(`   Smoothing: ${(filteredRSSI - rawRSSI).toFixed(1)} dBm`);
     }
 
-    // Calculate distance with corrected formula
+    // FIXED: Calculate distance with corrected formula
     const calculatedDistance = rssiToDistance(filteredRSSI, txPowerFromDevice || txPower);
-    console.log('📏 DISTANCE CALCULATION COMPLETE:', calculatedDistance.toFixed(2), 'meters');
     
-    // Update beacon data state with timestamp
+    // Update beacon data state
     setBeaconData(prev => {
-      const timestamp = new Date().toISOString();
       const newBeacon: BeaconData = {
         id: beacon.id,
         uuid: 'name-based',
@@ -201,19 +174,11 @@ export const useBLEScanner = (
       };
 
       const filtered = prev.filter(b => b.id !== beacon.id);
-      const updated = [...filtered, newBeacon];
-      
-      console.log('🔄 BEACON DATA UPDATED:');
-      updated.forEach(b => {
-        console.log(`   ${b.name}(${b.id}): RSSI=${b.rssi}dBm, Filtered=${b.filteredRSSI}dBm, Distance=${b.distance}m`);
-      });
-      console.log(`⏰ Update timestamp: ${timestamp}`);
-      
-      return updated;
+      return [...filtered, newBeacon];
     });
   }, [beacons, kalmanFilters, txPower]);
 
-  // Enhanced BLE scanning with 1Hz update rate
+  // OPTIMIZED: Enhanced BLE scanning with retry logic
   const scanForBeacons = async () => {
     if (!isNativePlatform || !bleInitialized) {
       const errorMsg = !isNativePlatform ? 
@@ -221,39 +186,38 @@ export const useBLEScanner = (
         'BLE not initialized';
       setBleError(errorMsg);
       setScanStatus(errorMsg);
-      console.log('❌ Cannot start beacon scan:', errorMsg);
       return;
     }
 
     try {
-      console.log('🚀 ===========================================');
-      console.log('🚀 STARTING REAL-TIME BEACON TRACKING (1Hz)');
-      console.log('🚀 ===========================================');
-      console.log('🎯 Target beacons:', beacons.map(b => b.deviceName));
-      console.log('🎯 TxPower:', txPower, 'dBm');
-      console.log('🎯 Update rate: 1Hz (1000ms intervals)');
+      console.log('🚀 Starting optimized beacon scan...');
       
       // Check Bluetooth state
       const bluetoothOk = await checkBluetoothState();
       if (!bluetoothOk) {
-        console.log('❌ Bluetooth check failed, stopping scan');
+        // Retry after 5 seconds
+        console.log('⏰ Bluetooth not ready, retrying in 5s...');
+        retryTimeoutRef.current = setTimeout(() => {
+          scanForBeacons();
+        }, 5000);
         return;
       }
 
       // Request permissions
       const permissionsOk = await requestAllPermissions();
       if (!permissionsOk) {
-        console.log('❌ Permissions check failed, stopping scan');
+        console.log('⏰ Permissions not ready, retrying in 5s...');
+        retryTimeoutRef.current = setTimeout(() => {
+          scanForBeacons();
+        }, 5000);
         return;
       }
 
       setBleError(null);
-      setScanStatus('Real-time tracking active (1Hz)...');
+      setScanStatus('Optimized scanning active...');
       setDevicesFound(0);
       
-      console.log('📡 Starting continuous BLE scan...');
-      
-      // Start scanning with optimized settings for 1Hz updates
+      // OPTIMIZED: Start scanning with better settings
       await BleClient.requestLEScan({
         services: [],
         allowDuplicates: true,
@@ -262,103 +226,81 @@ export const useBLEScanner = (
         setDevicesFound(prev => prev + 1);
         
         const deviceName = result.device?.name || result.localName || 'Unknown';
-        const deviceId = result.device?.deviceId || 'unknown';
-        
-        // Check if this device name matches any of our expected beacon names
         const targetNames = beacons.map(b => b.deviceName);
         const isTargetBeacon = targetNames.includes(deviceName) || 
                               (result.localName && targetNames.includes(result.localName));
 
         if (isTargetBeacon) {
           const matchedName = targetNames.includes(deviceName) ? deviceName : result.localName!;
-          console.log('🎯 TARGET BEACON DETECTED:', {
-            name: matchedName,
-            rssi: result.rssi,
-            txPower: result.txPower,
-            timestamp: new Date().toISOString()
-          });
-          setScanStatus(`Live tracking: ${matchedName} (${result.rssi}dBm)`);
+          setScanStatus(`Live: ${matchedName} (${result.rssi}dBm)`);
           processBeaconByName(matchedName, result.rssi || -100, result.txPower);
         }
       });
 
-      console.log('✅ Real-time BLE scan started successfully');
-      setScanStatus('Scanning at 1Hz for live updates...');
+      console.log('✅ Optimized BLE scan started');
+      setScanStatus('Scanning optimized for performance...');
       
     } catch (error) {
-      console.error('❌ Real-time BLE scanning error:', error);
+      console.error('❌ BLE scanning error:', error);
       setBleError(`Scan failed: ${error}`);
       setScanStatus(`Scan error: ${error}`);
       setIsScanning(false);
+      
+      // Auto-retry after 5 seconds
+      console.log('⏰ Auto-retry in 5 seconds...');
+      retryTimeoutRef.current = setTimeout(() => {
+        if (isScanning) {
+          scanForBeacons();
+        }
+      }, 5000);
     }
   };
 
-  // Real-time position calculation with live trilateration
+  // FIXED: Real-time position calculation with proper triggering
   const calculateFromRealBeacons = useCallback(() => {
-    if (!isScanning || !isNativePlatform || !bleInitialized) {
+    if (!isScanning || !isNativePlatform || !bleInitialized || beaconData.length < 3) {
       return;
     }
 
-    console.log('📍 ===========================================');
-    console.log('📍 REAL-TIME POSITION CALCULATION (1Hz)');
-    console.log('📍 ===========================================');
-    console.log(`📊 Available beacons: ${beaconData.length}/5`);
-    
-    if (beaconData.length >= 3) {
-      const distances: { [key: number]: number } = {};
-      console.log('🎯 Using beacons for trilateration:');
-      
-      beaconData.forEach(beacon => {
-        distances[beacon.id] = beacon.actualDistance;
-        console.log(`   ${beacon.name} (${beacon.id}): Distance=${beacon.actualDistance.toFixed(2)}m, RSSI=${beacon.rssi}dBm, Filtered=${beacon.filteredRSSI}dBm`);
-      });
+    const distances: { [key: number]: number } = {};
+    beaconData.forEach(beacon => {
+      distances[beacon.id] = beacon.actualDistance;
+    });
 
-      const newPosition = calculatePosition(beacons, distances, currentPosition);
-      
-      console.log('📍 TRILATERATION RESULT:');
-      console.log(`   Previous position: (${currentPosition.x.toFixed(2)}, ${currentPosition.y.toFixed(2)})`);
-      console.log(`   New position: (${newPosition.x.toFixed(2)}, ${newPosition.y.toFixed(2)})`);
-      console.log(`   Movement: ${Math.sqrt(Math.pow(newPosition.x - currentPosition.x, 2) + Math.pow(newPosition.y - currentPosition.y, 2)).toFixed(2)}m`);
-      
-      setCurrentPosition(newPosition);
-      setPositionHistory(prev => [...prev.slice(-49), newPosition]); // Keep last 50 positions
-      
-      console.log('✅ Position updated successfully');
-      setScanStatus(`Position: (${newPosition.x.toFixed(1)}, ${newPosition.y.toFixed(1)})m from ${beaconData.length} beacons`);
-    } else {
-      console.log('⚠️ Need at least 3 beacons for trilateration');
-      console.log(`   Current beacons: ${beaconData.length}`);
-      setScanStatus(`Need 3+ beacons for positioning (have ${beaconData.length})`);
-    }
+    const newPosition = calculatePosition(beacons, distances, currentPosition);
     
-    console.log('📍 POSITION CALCULATION COMPLETE');
+    // FIXED: Only update if position actually changed
+    const moved = Math.abs(newPosition.x - currentPosition.x) > 0.01 || 
+                  Math.abs(newPosition.y - currentPosition.y) > 0.01;
+    
+    if (moved) {
+      console.log(`📍 Position updated: (${newPosition.x.toFixed(2)}, ${newPosition.y.toFixed(2)})`);
+      setCurrentPosition(newPosition);
+      setPositionHistory(prev => [...prev.slice(-49), newPosition]);
+      setScanStatus(`Position: (${newPosition.x.toFixed(1)}, ${newPosition.y.toFixed(1)})m`);
+    }
   }, [isScanning, beaconData, currentPosition, isNativePlatform, bleInitialized, beacons]);
 
-  // Start/stop scanning with 1Hz position updates
+  // OPTIMIZED: Start/stop scanning with better management
   useEffect(() => {
     if (isScanning) {
-      console.log('🟢 Starting real-time beacon tracking with 1Hz updates...');
       if (isNativePlatform && bleInitialized) {
         scanForBeacons();
         
-        // Position calculation every 1 second (1Hz)
-        positionIntervalRef.current = setInterval(() => {
-          console.log('⏰ 1Hz Position update triggered');
-          calculateFromRealBeacons();
-        }, 1000); // 1000ms = 1Hz
-        
-        console.log('✅ 1Hz position updates started');
+        // Position calculation every 1 second
+        positionIntervalRef.current = setInterval(calculateFromRealBeacons, 1000);
       } else {
-        console.log('❌ Cannot start scan - platform or init issue');
         setIsScanning(false);
         setScanStatus('Cannot scan - platform/init issue');
       }
     } else {
-      console.log('🔴 Stopping real-time beacon tracking...');
       if (positionIntervalRef.current) {
         clearInterval(positionIntervalRef.current);
         positionIntervalRef.current = null;
-        console.log('🛑 1Hz position updates stopped');
+      }
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
       }
       if (isNativePlatform && bleInitialized) {
         BleClient.stopLEScan().catch(console.error);
@@ -370,37 +312,33 @@ export const useBLEScanner = (
       if (positionIntervalRef.current) {
         clearInterval(positionIntervalRef.current);
       }
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+      }
     };
   }, [isScanning, calculateFromRealBeacons, isNativePlatform, bleInitialized]);
 
   const toggleScanning = async () => {
-    console.log('🔄 Toggle scanning requested. Current state:', isScanning);
-    
     if (!isNativePlatform) {
       setBleError('BLE requires native platform');
-      console.log('❌ Cannot toggle - not native platform');
       return;
     }
     
     if (!bleInitialized) {
       setBleError('BLE not initialized');
-      console.log('❌ Cannot toggle - BLE not initialized');
       return;
     }
 
     if (!isScanning) {
       const bluetoothOk = await checkBluetoothState();
       if (!bluetoothOk) {
-        console.log('❌ Cannot start - Bluetooth not OK');
         return;
       }
     }
     
-    console.log('✅ Toggling scanning to:', !isScanning);
     setIsScanning(!isScanning);
     
     if (!isScanning) {
-      console.log('🧹 Clearing previous data for fresh tracking');
       setBeaconData([]);
       setPositionHistory([]);
       setBleError(null);
@@ -408,8 +346,44 @@ export const useBLEScanner = (
     }
   };
 
+  // ADDED: Manual scan restart function
+  const restartScanning = async () => {
+    console.log('🔄 Manually restarting scan...');
+    setIsScanning(false);
+    
+    // Clear all intervals and timeouts
+    if (positionIntervalRef.current) {
+      clearInterval(positionIntervalRef.current);
+      positionIntervalRef.current = null;
+    }
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+    
+    // Stop current scan
+    if (isNativePlatform && bleInitialized) {
+      try {
+        await BleClient.stopLEScan();
+      } catch (error) {
+        console.log('Stop scan error (ignored):', error);
+      }
+    }
+    
+    // Reset data
+    setBeaconData([]);
+    setPositionHistory([]);
+    setBleError(null);
+    setDevicesFound(0);
+    setScanStatus('Manual restart...');
+    
+    // Restart after short delay
+    setTimeout(() => {
+      setIsScanning(true);
+    }, 1000);
+  };
+
   const resetScanning = () => {
-    console.log('🔄 Resetting real-time beacon scanner...');
     setIsScanning(false);
     setCurrentPosition({ x: 2.5, y: 2.5 });
     setBeaconData([]);
@@ -417,7 +391,6 @@ export const useBLEScanner = (
     setBleError(null);
     setScanStatus('Reset complete');
     setDevicesFound(0);
-    console.log('✅ Real-time beacon scanner reset complete');
   };
 
   return {
@@ -432,6 +405,7 @@ export const useBLEScanner = (
     scanStatus,
     devicesFound,
     toggleScanning,
-    resetScanning
+    resetScanning,
+    restartScanning
   };
 };

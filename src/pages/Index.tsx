@@ -72,7 +72,8 @@ const Index = () => {
     scanStatus,
     devicesFound,
     toggleScanning,
-    resetScanning
+    resetScanning,
+    restartScanning
   } = useBLEScanner(beacons, kalmanFilters, uuid, txPower);
 
   const resetSimulation = () => {
@@ -127,7 +128,7 @@ const Index = () => {
 
           {/* Beacon Tracking Tab */}
           <TabsContent value="beacon-tracking" className="space-y-6">
-            {/* Control Panel with Live Status */}
+            {/* ENHANCED Control Panel with Restart Button */}
             <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-sm">
               <div className="p-6">
                 <div className="flex justify-center gap-4 mb-4">
@@ -141,7 +142,15 @@ const Index = () => {
                     {isScanning ? "Stop Live Tracking" : "Start Live Tracking (1Hz)"}
                   </Button>
                   <Button 
-                    onClick={resetSimulation}
+                    onClick={restartScanning}
+                    variant="outline"
+                    size="lg"
+                    disabled={!isNativePlatform || !bluetoothEnabled}
+                  >
+                    Restart Scan
+                  </Button>
+                  <Button 
+                    onClick={resetScanning}
                     variant="outline"
                     size="lg"
                   >
@@ -149,15 +158,15 @@ const Index = () => {
                   </Button>
                 </div>
                 
-                {/* Enhanced Real-Time Status Display */}
+                {/* ENHANCED Live Status Display */}
                 {isNativePlatform && (
                   <div className="mb-4 p-4 bg-slate-700/30 border border-slate-600 rounded-lg">
-                    <h3 className="text-white font-semibold mb-2">Real-Time Tracking Status (1Hz Updates)</h3>
+                    <h3 className="text-white font-semibold mb-2">Live Tracking Status (Optimized)</h3>
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
                       <div>
                         <p className="text-gray-400">Status:</p>
                         <p className={`font-mono text-xs ${isScanning ? 'text-green-400' : 'text-gray-300'}`}>
-                          {scanStatus || 'Ready for live tracking'}
+                          {scanStatus || 'Ready for tracking'}
                         </p>
                       </div>
                       <div>
@@ -169,7 +178,7 @@ const Index = () => {
                         <p className="text-green-400 font-mono">{beaconData.length}/5</p>
                       </div>
                       <div>
-                        <p className="text-gray-400">Position:</p>
+                        <p className="text-gray-400">Live Position:</p>
                         <p className="text-yellow-400 font-mono text-xs">
                           ({currentPosition.x.toFixed(2)}, {currentPosition.y.toFixed(2)})m
                         </p>
@@ -178,13 +187,13 @@ const Index = () => {
                   </div>
                 )}
 
-                {/* Live RSSI and Distance Display */}
+                {/* ENHANCED Live Beacon Data Display */}
                 {beaconData.length > 0 && (
                   <div className="mb-4 p-4 bg-slate-700/30 border border-slate-600 rounded-lg">
-                    <h3 className="text-white font-semibold mb-3">Live Beacon Data (1Hz Updates)</h3>
+                    <h3 className="text-white font-semibold mb-3">Live Beacon Data (Optimized Updates)</h3>
                     <div className="space-y-2">
                       {beaconData.map(beacon => (
-                        <div key={beacon.id} className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                        <div key={beacon.id} className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
                           <div>
                             <span className="text-gray-400">{beacon.name}:</span>
                           </div>
@@ -197,36 +206,34 @@ const Index = () => {
                           <div>
                             <span className="text-yellow-400">Dist: {beacon.distance}m</span>
                           </div>
+                          <div>
+                            <span className="text-purple-400">Pos: ({beacon.x},{beacon.y})</span>
+                          </div>
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
                 
-                {/* Debug Information */}
+                {/* ENHANCED Debug Information */}
                 <div className="mb-4 p-4 bg-slate-700/30 border border-slate-600 rounded-lg">
-                  <h3 className="text-white font-semibold mb-2">Configuration & Debug</h3>
+                  <h3 className="text-white font-semibold mb-2">Live Calculations & Debug</h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                     <div>
-                      <p className="text-gray-400">Platform:</p>
-                      <p className="text-white font-mono">{platformInfo.platform}</p>
+                      <p className="text-gray-400">Distance Formula:</p>
+                      <p className="text-blue-300 text-xs font-mono">10^((TxPower - RSSI) / (10 * 2.0))</p>
                     </div>
                     <div>
-                      <p className="text-gray-400">Tracking Method:</p>
-                      <p className="text-green-400 font-mono">Name + Live RSSI</p>
+                      <p className="text-gray-400">Trilateration:</p>
+                      <p className="text-green-300 text-xs font-mono">Linear system (POI-1,POI-2,POI-3)</p>
                     </div>
                     <div>
-                      <p className="text-gray-400">Update Rate:</p>
-                      <p className="text-yellow-400 font-mono">1Hz (1000ms)</p>
+                      <p className="text-gray-400">Performance:</p>
+                      <p className="text-yellow-300 text-xs font-mono">Optimized for Android</p>
                     </div>
                   </div>
                   <div className="mt-2">
-                    <p className="text-gray-400 text-xs">Expected Names:</p>
-                    <p className="text-green-300 text-xs font-mono">POI-1, POI-2, POI-3, POI-4, POI-5</p>
-                  </div>
-                  <div className="mt-1">
-                    <p className="text-gray-400 text-xs">Distance Formula:</p>
-                    <p className="text-blue-300 text-xs font-mono">distance = 10^((TxPower - RSSI) / (10 * 2.5))</p>
+                    <p className="text-gray-400 text-xs">Expected Range: 0.5-10m | TxPower: {txPower}dBm | Path Loss: n=2.0</p>
                   </div>
                 </div>
                 

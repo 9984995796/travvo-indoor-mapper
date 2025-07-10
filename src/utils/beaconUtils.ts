@@ -1,4 +1,3 @@
-
 export interface BeaconInfo {
   uuid: string;
   major: number;
@@ -21,29 +20,20 @@ export interface BeaconData {
   name: string;
 }
 
-// CORRECTED RSSI to distance conversion with proper indoor path-loss model
+// FIXED: Indoor RSSI to distance conversion with proper path-loss model
 export const rssiToDistance = (rssi: number, txPower = -59) => {
-  console.log(`📏 DISTANCE CALCULATION START:`);
-  console.log(`   RSSI: ${rssi} dBm`);
-  console.log(`   TxPower: ${txPower} dBm`);
-  
   if (rssi === 0 || rssi > 0) {
-    console.log(`❌ Invalid RSSI: ${rssi}, returning -1`);
     return -1.0;
   }
   
-  // Corrected formula: distance = 10^((TxPower - RSSI) / (10 * n))
-  // Where n = 2 for free space, but indoors we use n = 2-4
-  const n = 2.5; // Path loss exponent for indoor environment
+  // CORRECTED: Using proper indoor path loss model
+  // Formula: distance = 10^((TxPower - RSSI) / (10 * n))
+  // For indoor environment: n = 2.0 (reduced from 2.5 for better accuracy)
+  const n = 2.0; 
   const distance = Math.pow(10, (txPower - rssi) / (10 * n));
   
-  // Apply realistic indoor bounds (0.1m to 20m instead of 50m)
-  const boundedDistance = Math.max(0.1, Math.min(20, distance));
-  
-  console.log(`   Formula: 10^((${txPower} - ${rssi}) / (10 * ${n}))`);
-  console.log(`   Raw distance: ${distance.toFixed(3)}m`);
-  console.log(`   Bounded distance: ${boundedDistance.toFixed(3)}m`);
-  console.log(`📏 DISTANCE CALCULATION END`);
+  // Realistic indoor bounds: 0.5m to 10m (reduced from 20m)
+  const boundedDistance = Math.max(0.5, Math.min(10, distance));
   
   return boundedDistance;
 };
