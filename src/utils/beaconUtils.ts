@@ -21,6 +21,33 @@ export interface BeaconData {
   name: string;
 }
 
+// CORRECTED RSSI to distance conversion with proper indoor path-loss model
+export const rssiToDistance = (rssi: number, txPower = -59) => {
+  console.log(`📏 DISTANCE CALCULATION START:`);
+  console.log(`   RSSI: ${rssi} dBm`);
+  console.log(`   TxPower: ${txPower} dBm`);
+  
+  if (rssi === 0 || rssi > 0) {
+    console.log(`❌ Invalid RSSI: ${rssi}, returning -1`);
+    return -1.0;
+  }
+  
+  // Corrected formula: distance = 10^((TxPower - RSSI) / (10 * n))
+  // Where n = 2 for free space, but indoors we use n = 2-4
+  const n = 2.5; // Path loss exponent for indoor environment
+  const distance = Math.pow(10, (txPower - rssi) / (10 * n));
+  
+  // Apply realistic indoor bounds (0.1m to 20m instead of 50m)
+  const boundedDistance = Math.max(0.1, Math.min(20, distance));
+  
+  console.log(`   Formula: 10^((${txPower} - ${rssi}) / (10 * ${n}))`);
+  console.log(`   Raw distance: ${distance.toFixed(3)}m`);
+  console.log(`   Bounded distance: ${boundedDistance.toFixed(3)}m`);
+  console.log(`📏 DISTANCE CALCULATION END`);
+  
+  return boundedDistance;
+};
+
 // Enhanced iBeacon parser with comprehensive logging and CORRECTED UUID handling
 export const parseIBeaconData = (manufacturerDataBuffer: ArrayBuffer, rssi: number): BeaconInfo | null => {
   try {
@@ -256,19 +283,4 @@ export const parseIBeaconData = (manufacturerDataBuffer: ArrayBuffer, rssi: numb
     console.error('❌ Error parsing beacon data:', error);
     return null;
   }
-};
-
-// RSSI to distance conversion using path-loss model
-export const rssiToDistance = (rssi: number, txPower = -59) => {
-  if (rssi === 0) return -1.0;
-  
-  const ratio = (txPower - rssi) / 20.0;
-  const distance = Math.pow(10, ratio);
-  
-  // Apply some bounds (0.1m to 50m)
-  const boundedDistance = Math.max(0.1, Math.min(50, distance));
-  
-  console.log(`📏 Distance calculation: RSSI=${rssi}, TxPower=${txPower}, Distance=${boundedDistance.toFixed(2)}m`);
-  
-  return boundedDistance;
 };

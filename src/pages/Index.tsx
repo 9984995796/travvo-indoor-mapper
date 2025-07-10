@@ -21,7 +21,7 @@ const Index = () => {
     userAgent: ''
   });
 
-  // Updated beacon configuration with device names for name-based matching
+  // Updated beacon configuration for real-time tracking
   const beacons = [
     { id: 1001, x: 0, y: 0, name: "Corner NW", deviceName: "POI-1" },
     { id: 1002, x: 5, y: 0, name: "Corner NE", deviceName: "POI-2" },
@@ -30,9 +30,9 @@ const Index = () => {
     { id: 1005, x: 2.5, y: 2.5, name: "Center", deviceName: "POI-5" }
   ];
 
-  // Keep UUID for backward compatibility, but now using name-based matching
-  const uuid = "ab907856-3412-3412-3412-341278563412";
-  const txPower = -59;
+  // CORRECTED UUID and TxPower for accurate distance calculation
+  const uuid = "AB907856-3412-3412-3412-341278563412"; // Corrected format
+  const txPower = -59; // Your beacons broadcast at -59 dBm
 
   // Get platform info for debugging
   useEffect(() => {
@@ -41,10 +41,12 @@ const Index = () => {
       isNative: Capacitor.isNativePlatform(),
       userAgent: navigator.userAgent
     });
-    console.log('🎯 UPDATED BEACON CONFIGURATION (NAME-BASED):');
+    console.log('🎯 REAL-TIME BEACON TRACKING CONFIGURATION:');
     console.log('🎯 Target device names:', beacons.map(b => `${b.deviceName} (${b.name})`));
-    console.log('🎯 Matching method: Device names instead of UUID');
-    console.log('🎯 Expected names: POI-1, POI-2, POI-3, POI-4, POI-5');
+    console.log('🎯 UUID (corrected):', uuid);
+    console.log('🎯 TxPower:', txPower, 'dBm');
+    console.log('🎯 Update rate: 1Hz for live tracking');
+    console.log('🎯 Expected distance range: 1-2m indoors');
     console.log('Platform Info:', {
       platform: Capacitor.getPlatform(),
       isNative: Capacitor.isNativePlatform(),
@@ -56,6 +58,7 @@ const Index = () => {
   useEffect(() => {
     const filters = createKalmanFilters(beacons);
     setKalmanFilters(filters);
+    console.log('📊 Kalman filters initialized for all beacons');
   }, []);
 
   const {
@@ -79,6 +82,7 @@ const Index = () => {
     // Reset Kalman filters
     const filters = createKalmanFilters(beacons);
     setKalmanFilters(filters);
+    console.log('🔄 Full system reset complete');
   };
 
   return (
@@ -87,16 +91,19 @@ const Index = () => {
         {/* Header */}
         <div className="text-center space-y-2">
           <h1 className="text-4xl font-bold text-white">Travvo Indoor Positioning System</h1>
-          <p className="text-blue-200 text-lg">Name-Based BLE Beacon Navigation</p>
+          <p className="text-blue-200 text-lg">Real-Time BLE Beacon Navigation (1Hz Updates)</p>
           <div className="flex justify-center gap-4 items-center flex-wrap">
             <Badge variant="outline" className="text-blue-200 border-blue-300">
-              Method: Device Names
+              Method: Name-Based + Live RSSI
             </Badge>
             <Badge variant="outline" className="text-blue-200 border-blue-300">
               5×5m Room
             </Badge>
             <Badge variant="outline" className="text-blue-200 border-blue-300">
               POI-1 to POI-5
+            </Badge>
+            <Badge variant="outline" className="text-blue-200 border-blue-300">
+              TxPower: {txPower}dBm
             </Badge>
             <Badge variant="outline" className={`${isNativePlatform ? 'text-green-200 border-green-300' : 'text-red-200 border-red-300'}`}>
               {isNativePlatform ? 'Native Platform Detected' : `Platform: ${platformInfo.platform}`}
@@ -111,7 +118,7 @@ const Index = () => {
         <Tabs defaultValue="beacon-tracking" className="w-full">
           <TabsList className="grid w-full grid-cols-2 bg-slate-800/50 border-slate-700">
             <TabsTrigger value="beacon-tracking" className="data-[state=active]:bg-slate-700">
-              Beacon Tracking
+              Real-Time Beacon Tracking
             </TabsTrigger>
             <TabsTrigger value="ble-scanner" className="data-[state=active]:bg-slate-700">
               BLE Device Scanner
@@ -120,7 +127,7 @@ const Index = () => {
 
           {/* Beacon Tracking Tab */}
           <TabsContent value="beacon-tracking" className="space-y-6">
-            {/* Control Panel */}
+            {/* Control Panel with Live Status */}
             <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-sm">
               <div className="p-6">
                 <div className="flex justify-center gap-4 mb-4">
@@ -131,7 +138,7 @@ const Index = () => {
                     className="min-w-32"
                     disabled={!isNativePlatform || !bluetoothEnabled}
                   >
-                    {isScanning ? "Stop Scanning" : "Start Name-Based Scan"}
+                    {isScanning ? "Stop Live Tracking" : "Start Live Tracking (1Hz)"}
                   </Button>
                   <Button 
                     onClick={resetSimulation}
@@ -142,45 +149,84 @@ const Index = () => {
                   </Button>
                 </div>
                 
-                {/* Enhanced Scan Status */}
+                {/* Enhanced Real-Time Status Display */}
                 {isNativePlatform && (
                   <div className="mb-4 p-4 bg-slate-700/30 border border-slate-600 rounded-lg">
-                    <h3 className="text-white font-semibold mb-2">Name-Based BLE Scan Status</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                    <h3 className="text-white font-semibold mb-2">Real-Time Tracking Status (1Hz Updates)</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
                       <div>
                         <p className="text-gray-400">Status:</p>
-                        <p className={`font-mono ${isScanning ? 'text-green-400' : 'text-gray-300'}`}>
-                          {scanStatus || 'Ready to scan'}
+                        <p className={`font-mono text-xs ${isScanning ? 'text-green-400' : 'text-gray-300'}`}>
+                          {scanStatus || 'Ready for live tracking'}
                         </p>
                       </div>
                       <div>
-                        <p className="text-gray-400">Devices Found:</p>
+                        <p className="text-gray-400">BLE Devices:</p>
                         <p className="text-blue-400 font-mono">{devicesFound}</p>
                       </div>
                       <div>
-                        <p className="text-gray-400">Named Beacons:</p>
+                        <p className="text-gray-400">Active Beacons:</p>
                         <p className="text-green-400 font-mono">{beaconData.length}/5</p>
                       </div>
+                      <div>
+                        <p className="text-gray-400">Position:</p>
+                        <p className="text-yellow-400 font-mono text-xs">
+                          ({currentPosition.x.toFixed(2)}, {currentPosition.y.toFixed(2)})m
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Live RSSI and Distance Display */}
+                {beaconData.length > 0 && (
+                  <div className="mb-4 p-4 bg-slate-700/30 border border-slate-600 rounded-lg">
+                    <h3 className="text-white font-semibold mb-3">Live Beacon Data (1Hz Updates)</h3>
+                    <div className="space-y-2">
+                      {beaconData.map(beacon => (
+                        <div key={beacon.id} className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                          <div>
+                            <span className="text-gray-400">{beacon.name}:</span>
+                          </div>
+                          <div>
+                            <span className="text-blue-400">RSSI: {beacon.rssi}dBm</span>
+                          </div>
+                          <div>
+                            <span className="text-green-400">Filtered: {beacon.filteredRSSI}dBm</span>
+                          </div>
+                          <div>
+                            <span className="text-yellow-400">Dist: {beacon.distance}m</span>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
                 
                 {/* Debug Information */}
                 <div className="mb-4 p-4 bg-slate-700/30 border border-slate-600 rounded-lg">
-                  <h3 className="text-white font-semibold mb-2">Debug Information</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                  <h3 className="text-white font-semibold mb-2">Configuration & Debug</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                     <div>
                       <p className="text-gray-400">Platform:</p>
                       <p className="text-white font-mono">{platformInfo.platform}</p>
                     </div>
                     <div>
-                      <p className="text-gray-400">Matching Method:</p>
-                      <p className="text-green-400 font-mono">Device Names</p>
+                      <p className="text-gray-400">Tracking Method:</p>
+                      <p className="text-green-400 font-mono">Name + Live RSSI</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-400">Update Rate:</p>
+                      <p className="text-yellow-400 font-mono">1Hz (1000ms)</p>
                     </div>
                   </div>
                   <div className="mt-2">
                     <p className="text-gray-400 text-xs">Expected Names:</p>
                     <p className="text-green-300 text-xs font-mono">POI-1, POI-2, POI-3, POI-4, POI-5</p>
+                  </div>
+                  <div className="mt-1">
+                    <p className="text-gray-400 text-xs">Distance Formula:</p>
+                    <p className="text-blue-300 text-xs font-mono">distance = 10^((TxPower - RSSI) / (10 * 2.5))</p>
                   </div>
                 </div>
                 
@@ -217,10 +263,10 @@ const Index = () => {
 
             {/* Main Grid Layout */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Position Grid */}
+              {/* Position Grid with Live Updates */}
               <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-sm">
                 <div className="p-6">
-                  <h2 className="text-xl font-semibold text-white mb-4">Real-Time Position Tracking</h2>
+                  <h2 className="text-xl font-semibold text-white mb-4">Real-Time Position Tracking (500×500px Grid)</h2>
                   <PositionGrid 
                     beacons={beacons}
                     currentPosition={currentPosition}
@@ -230,11 +276,14 @@ const Index = () => {
                   />
                   <div className="mt-4 text-center">
                     <p className="text-blue-200">
-                      Calculated Position: ({Math.round(currentPosition.x * 100) / 100}, {Math.round(currentPosition.y * 100) / 100})m
+                      Live Position: ({Math.round(currentPosition.x * 100) / 100}, {Math.round(currentPosition.y * 100) / 100})m
+                    </p>
+                    <p className="text-gray-400 text-sm">
+                      Grid: 500×500px | Scale: 100px/meter | Red dot: 20×20px
                     </p>
                     {isNativePlatform && isScanning && (
                       <p className="text-green-400 text-sm mt-1">
-                        📡 Scanning for named beacons (POI-1 to POI-5)...
+                        📡 Live tracking at 1Hz with trilateration...
                       </p>
                     )}
                   </div>
@@ -263,14 +312,14 @@ const Index = () => {
               </Card>
             </div>
 
-            {/* Combined Beacon Data Display */}
+            {/* Combined Data Display */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Original Beacon Data */}
+              {/* Real-Time Beacon Data */}
               <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-sm">
                 <div className="p-6">
-                  <h2 className="text-xl font-semibold text-white mb-4">Combined Name-Based Scanner</h2>
+                  <h2 className="text-xl font-semibold text-white mb-4">Live Beacon Data (1Hz)</h2>
                   <p className="text-gray-300 text-sm mb-4">
-                    This scans for all beacons simultaneously by device names for position calculation.
+                    Real-time RSSI, filtered values, and distance calculations updated every second.
                   </p>
                   <BeaconSimulator 
                     beacons={beaconData}
@@ -308,10 +357,10 @@ const Index = () => {
 
         {/* Footer */}
         <div className="text-center text-gray-400 text-sm">
-          <p>Travvo Heritage Navigation System | Name-Based BLE Indoor Positioning</p>
+          <p>Travvo Heritage Navigation System | Real-Time BLE Indoor Positioning (1Hz)</p>
           <p>Build natively with: npm run build && npx cap sync && npx cap run android</p>
           {isNativePlatform ? (
-            <p className="text-green-400">🟢 Native platform detected - Name-based BLE scanning available</p>
+            <p className="text-green-400">🟢 Native platform detected - Real-time BLE tracking active</p>
           ) : (
             <p className="text-red-400">🔴 Web platform detected - Build natively for BLE functionality</p>
           )}
