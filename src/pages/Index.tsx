@@ -10,8 +10,9 @@ import BLEDeviceScanner from '@/components/BLEDeviceScanner';
 import { createKalmanFilters } from '@/utils/kalmanFilter';
 import { useBLEScanner } from '@/hooks/useBLEScanner';
 import { Capacitor } from '@capacitor/core';
-import IndividualBeaconScanner from '@/components/IndividualBeaconScanner';
+
 import LiveCalculationDisplay from '@/components/LiveCalculationDisplay';
+import CalculationBreakdown from '@/components/CalculationBreakdown';
 
 const Index = () => {
   const [simulatedPosition, setSimulatedPosition] = useState({ x: 2.5, y: 2.5 });
@@ -298,26 +299,6 @@ const Index = () => {
                 </div>
               </Card>
 
-              {/* Individual Beacon Scanners */}
-              <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-sm">
-                <div className="p-6">
-                  <h2 className="text-xl font-semibold text-white mb-4">Individual Beacon Scanner</h2>
-                  <p className="text-gray-300 text-sm mb-6">
-                    Scan each POI beacon individually by device name to test connectivity and view detailed information.
-                  </p>
-                  <div className="space-y-4 max-h-96 overflow-y-auto">
-                    {beacons.map(beacon => (
-                      <IndividualBeaconScanner
-                        key={beacon.id}
-                        beacon={beacon}
-                        uuid={uuid}
-                        txPower={txPower}
-                        isNativePlatform={isNativePlatform}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </Card>
             </div>
 
             {/* Live Calculation Display */}
@@ -326,6 +307,14 @@ const Index = () => {
               currentPosition={currentPosition}
               txPower={txPower}
               isScanning={isScanning && isNativePlatform}
+            />
+
+            {/* Calculation Breakdown for Team Review */}
+            <CalculationBreakdown
+              beaconData={beaconData}
+              currentPosition={currentPosition}
+              txPower={txPower}
+              isLive={isScanning && isNativePlatform}
             />
 
             {/* Combined Data Display */}

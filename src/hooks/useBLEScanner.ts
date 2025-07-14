@@ -34,6 +34,8 @@ export const useBLEScanner = (
   const [bluetoothEnabled, setBluetoothEnabled] = useState(false);
   const [scanStatus, setScanStatus] = useState<string>('');
   const [devicesFound, setDevicesFound] = useState<number>(0);
+  const [latestRSSI, setLatestRSSI] = useState<{ [key: number]: number }>({});
+  const [beaconDistances, setBeaconDistances] = useState<{ [key: number]: number }>({});
   const scanIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const positionIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -141,12 +143,15 @@ export const useBLEScanner = (
     initializeBLE();
   }, [beacons, txPower]);
 
-  // OPTIMIZED: Process beacon data with reduced logging
+  // CRITICAL: Process beacon data with live distance tracking
   const processBeaconByName = useCallback((deviceName: string, rssi: number, txPowerFromDevice?: number) => {
     const beacon = beacons.find(b => b.deviceName === deviceName);
     if (!beacon) {
+      console.log(`❌ No beacon found for device: ${deviceName}`);
       return;
     }
+
+    console.log(`🎯 Processing beacon: ${deviceName} (ID: ${beacon.id}) RSSI: ${rssi}dBm`);
 
     // Apply Kalman filter for RSSI smoothing
     let filteredRSSI = rssi;
@@ -154,11 +159,24 @@ export const useBLEScanner = (
       filteredRSSI = kalmanFilters[beacon.id].filter(rssi);
     }
 
-  // CORRECTED: Calculate distance with fixed formula and logging
+    // CORRECTED: Calculate distance with fixed formula and logging
     const calculatedDistance = rssiToDistance(filteredRSSI, txPowerFromDevice || txPower);
     console.log(`🔧 ${deviceName}: Raw=${rssi}dBm → Filtered=${filteredRSSI.toFixed(1)}dBm → Distance=${calculatedDistance.toFixed(2)}m`);
     
-    // Update beacon data state
+    // CRITICAL: Update latest RSSI and distance tracking
+    setLatestRSSI(prev => ({
+      ...prev,
+      [beacon.id]: rssi
+    }));
+    
+    setBeaconDistances(prev => ({
+      ...prev,
+      [beacon.id]: calculatedDistance
+    }));
+    
+    console.log(`📊 Updated distances:`, { [beacon.id]: calculatedDistance });
+    
+    // Update beacon data state for UI
     setBeaconData(prev => {
       const newBeacon: BeaconData = {
         id: beacon.id,
@@ -178,6 +196,31 @@ export const useBLEScanner = (
       return [...filtered, newBeacon];
     });
   }, [beacons, kalmanFilters, txPower]);
+
+  // CRITICAL: Live position calculation using updated distances
+  useEffect(() => {
+    if (!isScanning || Object.keys(beaconDistances).length < 3) {
+      console.log(`🔄 Position calc skipped: scanning=${isScanning}, distances=${Object.keys(beaconDistances).length}`);
+      return;
+    }
+    
+    console.log('🎯 Live position calculation triggered with distances:', beaconDistances);
+    
+    // Calculate new position using live distances
+    const newPosition = calculatePosition(beacons, beaconDistances, currentPosition);
+    
+    // Update position if it changed
+    const positionChanged = Math.abs(newPosition.x - currentPosition.x) > 0.01 || 
+                           Math.abs(newPosition.y - currentPosition.y) > 0.01;
+    
+    if (positionChanged) {
+      setCurrentPosition(newPosition);
+      setPositionHistory(prev => [...prev.slice(-49), newPosition]);
+      console.log(`🎯 POSITION UPDATED: (${newPosition.x.toFixed(3)}, ${newPosition.y.toFixed(3)})m`);
+    } else {
+      console.log(`🎯 Position stable: (${newPosition.x.toFixed(3)}, ${newPosition.y.toFixed(3)})m`);
+    }
+  }, [beaconDistances, isScanning, beacons, currentPosition]);
 
   // OPTIMIZED: Enhanced BLE scanning with retry logic
   const scanForBeacons = async () => {

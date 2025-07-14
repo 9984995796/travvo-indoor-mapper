@@ -11,37 +11,37 @@ interface Position {
   y: number;
 }
 
-// FIXED: Enhanced trilateration with proper beacon mapping
+// FIXED: Enhanced trilateration with live distance integration
 export const calculatePosition = (beacons: Beacon[], beaconDistances: { [key: number]: number }, currentPosition: Position): Position => {
   console.log('🎯 TRILATERATION START - Live Position Update');
+  console.log('📊 Raw beacon distances received:', beaconDistances);
   
-  // Map beacons by name for reliable positioning
-  const beaconMap = {
-    'POI-1': beacons.find(b => b.name === "Corner NW"), // (0,0)
-    'POI-2': beacons.find(b => b.name === "Corner NE"), // (5,0) 
-    'POI-3': beacons.find(b => b.name === "Corner SW")  // (0,5)
-  };
+  // Map beacons by ID for reliable positioning
+  const beacon1 = beacons.find(b => b.id === 1001); // Corner NW (0,0)
+  const beacon2 = beacons.find(b => b.id === 1002); // Corner NE (5,0) 
+  const beacon3 = beacons.find(b => b.id === 1003); // Corner SW (0,5)
   
-  const distances = {
-    'POI-1': beaconDistances[1001],
-    'POI-2': beaconDistances[1002], 
-    'POI-3': beaconDistances[1003]
-  };
+  const distance1 = beaconDistances[1001];
+  const distance2 = beaconDistances[1002]; 
+  const distance3 = beaconDistances[1003];
 
   console.log('📊 Trilateration inputs:');
-  console.log(`   POI-1 (NW): pos=(0,0), dist=${distances['POI-1']?.toFixed(2)}m`);
-  console.log(`   POI-2 (NE): pos=(5,0), dist=${distances['POI-2']?.toFixed(2)}m`);
-  console.log(`   POI-3 (SW): pos=(0,5), dist=${distances['POI-3']?.toFixed(2)}m`);
+  console.log(`   Beacon 1001 (NW): pos=(0,0), dist=${distance1?.toFixed(3)}m`);
+  console.log(`   Beacon 1002 (NE): pos=(5,0), dist=${distance2?.toFixed(3)}m`);
+  console.log(`   Beacon 1003 (SW): pos=(0,5), dist=${distance3?.toFixed(3)}m`);
 
-  if (!distances['POI-1'] || !distances['POI-2'] || !distances['POI-3']) {
+  // Require at least 3 beacons with valid distances
+  if (!distance1 || !distance2 || !distance3 || 
+      distance1 <= 0 || distance2 <= 0 || distance3 <= 0) {
     console.log('❌ Insufficient beacon data - using current position');
+    console.log(`   Missing distances: 1001=${distance1}, 1002=${distance2}, 1003=${distance3}`);
     return currentPosition;
   }
 
-  // Trilateration using POI-1(0,0), POI-2(5,0), POI-3(0,5)
-  const x1 = 0, y1 = 0, r1 = distances['POI-1'];
-  const x2 = 5, y2 = 0, r2 = distances['POI-2'];
-  const x3 = 0, y3 = 5, r3 = distances['POI-3'];
+  // Trilateration using live distances: NW(0,0), NE(5,0), SW(0,5)
+  const x1 = 0, y1 = 0, r1 = distance1;
+  const x2 = 5, y2 = 0, r2 = distance2;
+  const x3 = 0, y3 = 5, r3 = distance3;
   
   // Linear system solution
   const A = 2 * (x2 - x1);
