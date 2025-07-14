@@ -11,6 +11,7 @@ import { createKalmanFilters } from '@/utils/kalmanFilter';
 import { useBLEScanner } from '@/hooks/useBLEScanner';
 import { Capacitor } from '@capacitor/core';
 import IndividualBeaconScanner from '@/components/IndividualBeaconScanner';
+import LiveCalculationDisplay from '@/components/LiveCalculationDisplay';
 
 const Index = () => {
   const [simulatedPosition, setSimulatedPosition] = useState({ x: 2.5, y: 2.5 });
@@ -318,6 +319,14 @@ const Index = () => {
                 </div>
               </Card>
             </div>
+
+            {/* Live Calculation Display */}
+            <LiveCalculationDisplay
+              beaconData={beaconData}
+              currentPosition={currentPosition}
+              txPower={txPower}
+              isScanning={isScanning && isNativePlatform}
+            />
 
             {/* Combined Data Display */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

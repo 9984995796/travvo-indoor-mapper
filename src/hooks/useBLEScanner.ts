@@ -154,8 +154,9 @@ export const useBLEScanner = (
       filteredRSSI = kalmanFilters[beacon.id].filter(rssi);
     }
 
-    // FIXED: Calculate distance with corrected formula
+  // CORRECTED: Calculate distance with fixed formula and logging
     const calculatedDistance = rssiToDistance(filteredRSSI, txPowerFromDevice || txPower);
+    console.log(`🔧 ${deviceName}: Raw=${rssi}dBm → Filtered=${filteredRSSI.toFixed(1)}dBm → Distance=${calculatedDistance.toFixed(2)}m`);
     
     // Update beacon data state
     setBeaconData(prev => {
@@ -233,7 +234,8 @@ export const useBLEScanner = (
         if (isTargetBeacon) {
           const matchedName = targetNames.includes(deviceName) ? deviceName : result.localName!;
           setScanStatus(`Live: ${matchedName} (${result.rssi}dBm)`);
-          processBeaconByName(matchedName, result.rssi || -100, result.txPower);
+          console.log(`🎯 LIVE BEACON: ${matchedName} RSSI=${result.rssi}dBm TxPower=${result.txPower || txPower}dBm`);
+          processBeaconByName(matchedName, result.rssi || -100, result.txPower || txPower);
         }
       });
 
@@ -256,28 +258,43 @@ export const useBLEScanner = (
     }
   };
 
-  // FIXED: Real-time position calculation with proper triggering
+  // CORRECTED: Real-time position calculation with guaranteed updates
   const calculateFromRealBeacons = useCallback(() => {
-    if (!isScanning || !isNativePlatform || !bleInitialized || beaconData.length < 3) {
+    console.log(`🔄 POSITION CALC: scanning=${isScanning}, native=${isNativePlatform}, init=${bleInitialized}, beacons=${beaconData.length}`);
+    
+    if (!isScanning || !isNativePlatform || !bleInitialized) {
+      console.log('❌ Position calc skipped - prerequisites not met');
       return;
     }
+
+    if (beaconData.length < 3) {
+      console.log(`❌ Position calc skipped - need 3+ beacons, have ${beaconData.length}`);
+      return;
+    }
+
+    console.log('📊 Starting trilateration with beacon data:', beaconData.map(b => `${b.name}=${b.actualDistance.toFixed(2)}m`));
 
     const distances: { [key: number]: number } = {};
     beaconData.forEach(beacon => {
       distances[beacon.id] = beacon.actualDistance;
+      console.log(`  ${beacon.name} (ID:${beacon.id}): ${beacon.actualDistance.toFixed(2)}m`);
     });
 
     const newPosition = calculatePosition(beacons, distances, currentPosition);
     
-    // FIXED: Only update if position actually changed
-    const moved = Math.abs(newPosition.x - currentPosition.x) > 0.01 || 
-                  Math.abs(newPosition.y - currentPosition.y) > 0.01;
+    console.log(`📍 TRILATERATION: (${currentPosition.x.toFixed(3)}, ${currentPosition.y.toFixed(3)}) → (${newPosition.x.toFixed(3)}, ${newPosition.y.toFixed(3)})`);
     
-    if (moved) {
-      console.log(`📍 Position updated: (${newPosition.x.toFixed(2)}, ${newPosition.y.toFixed(2)})`);
+    // CORRECTED: Always update position, even small changes are important for live tracking
+    const moved = Math.abs(newPosition.x - currentPosition.x) > 0.001 || 
+                  Math.abs(newPosition.y - currentPosition.y) > 0.001;
+    
+    if (moved || true) { // Force updates for live tracking
+      console.log(`📍 POSITION UPDATE: (${newPosition.x.toFixed(3)}, ${newPosition.y.toFixed(3)})`);
       setCurrentPosition(newPosition);
       setPositionHistory(prev => [...prev.slice(-49), newPosition]);
-      setScanStatus(`Position: (${newPosition.x.toFixed(1)}, ${newPosition.y.toFixed(1)})m`);
+      setScanStatus(`Live Position: (${newPosition.x.toFixed(1)}, ${newPosition.y.toFixed(1)})m`);
+    } else {
+      console.log(`📍 Position stable at (${newPosition.x.toFixed(3)}, ${newPosition.y.toFixed(3)})`);
     }
   }, [isScanning, beaconData, currentPosition, isNativePlatform, bleInitialized, beacons]);
 
